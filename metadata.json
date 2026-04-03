@@ -1,0 +1,7 @@
+{
+  "name": "QR Warehouse Pro",
+  "description": "Hệ thống quản lý kho thông minh bằng QR Code: Nhập, xuất, tồn kho theo vị trí và đối chiếu dữ liệu thực tế.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

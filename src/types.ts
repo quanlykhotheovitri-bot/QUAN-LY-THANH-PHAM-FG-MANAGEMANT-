@@ -24,8 +24,8 @@ export interface InventoryBalance {
   kh: string;
   quantity: number;
   box_type: string;
-  location_id: string;
-  warehouse_locations?: WarehouseLocation;
+  location_path: string;
+  total_boxes?: number;
   last_updated: string;
 }
 

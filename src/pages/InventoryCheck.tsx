@@ -29,7 +29,7 @@ export default function InventoryCheck() {
     // Find current inventory
     const { data: inventory } = await supabase
       .from('inventory_balances')
-      .select('*, warehouse_locations(*)')
+      .select('*')
       .eq('qr_code', parsed.qrCode)
       .single();
 
@@ -55,7 +55,7 @@ export default function InventoryCheck() {
         await supabase.from('inventory_movements').insert({
           type: 'ADJUSTMENT',
           qr_code: item.qrCode,
-          to_location_id: item.inventory?.location_id,
+          to_location: item.inventory?.location_path,
           quantity: item.actualQty,
           remark: `Kiểm kê kho: ${item.status}`
         });
@@ -159,7 +159,7 @@ export default function InventoryCheck() {
                     <td className="px-6 py-4">
                       <div className="font-bold text-slate-900">{item.rpro || item.so}</div>
                       <div className="flex items-center gap-1 text-[10px] text-blue-600 font-bold">
-                        <MapPin className="w-3 h-3" /> {item.inventory?.warehouse_locations?.full_path || 'N/A'}
+                        <MapPin className="w-3 h-3" /> {item.inventory?.location_path || 'N/A'}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center font-medium text-slate-600">

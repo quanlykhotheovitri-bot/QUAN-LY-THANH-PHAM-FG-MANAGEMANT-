@@ -16,33 +16,45 @@ export function formatDate(date: string | Date) {
 }
 
 export function parseQRCode(qrData: string) {
-  // Example format: QRCODE|SO|RPRO|KH|BoxType|Qty|Location
-  // This is a flexible parser. We can adjust based on actual QR formats.
-  // For now, let's assume a pipe-separated format or JSON.
+  // Flexible formats: 
+  // 1. SO-260202-0336|RPRO-260203-0325|1/9
+  // 2. SO-260202-0336|RPRO-260203-0325
+  // 3. SO-260202-0336|
   
   try {
     if (qrData.startsWith('{')) {
       return JSON.parse(qrData);
     }
-    
-    const parts = qrData.split('|');
-    if (parts.length >= 5) {
-      return {
-        qrCode: parts[0],
-        so: parts[1],
-        rpro: parts[2],
-        kh: parts[3],
-        boxType: parts[4],
-        quantity: parseInt(parts[5]) || 1,
-        location: parts[6] || '',
-        date: parts[7] || new Date().toISOString(),
-      };
+
+    const parts = qrData.split('|').map(p => p.trim());
+    const so = parts[0] || '';
+    const rpro = parts[1] || '';
+    let totalBoxes = 1;
+
+    // Check if the last part is a box indicator like "1/9"
+    if (parts.length >= 3) {
+      const lastPart = parts[parts.length - 1];
+      if (lastPart.includes('/')) {
+        const totalStr = lastPart.split('/')[1];
+        totalBoxes = parseInt(totalStr) || 1;
+      }
     }
+
+    return {
+      qrCode: qrData,
+      so: so,
+      rpro: rpro,
+      kh: '', 
+      boxType: '', 
+      quantity: 1, 
+      totalBoxes: totalBoxes,
+      location: '',
+      date: new Date().toISOString(),
+    };
   } catch (e) {
     console.error('Failed to parse QR code', e);
   }
   
-  // Fallback: treat whole string as QR code
   return {
     qrCode: qrData,
     so: '',
@@ -50,6 +62,7 @@ export function parseQRCode(qrData: string) {
     kh: '',
     boxType: '',
     quantity: 1,
+    totalBoxes: 1,
     location: '',
     date: new Date().toISOString(),
   };

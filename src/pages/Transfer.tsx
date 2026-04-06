@@ -17,7 +17,7 @@ export default function Transfer() {
   const [isScanning, setIsScanning] = useState(false);
   const [item, setItem] = useState<InventoryBalance | null>(null);
   const [locations, setLocations] = useState<WarehouseLocation[]>([]);
-  const [newLocationId, setNewLocationId] = useState('');
+  const [newLocationPath, setNewLocationPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -35,7 +35,7 @@ export default function Transfer() {
     
     const { data, error } = await supabase
       .from('inventory_balances')
-      .select('*, warehouse_locations(*)')
+      .select('*')
       .eq('qr_code', parsed.qrCode)
       .single();
 
@@ -49,15 +49,17 @@ export default function Transfer() {
   };
 
   const handleTransfer = async () => {
-    if (!item || !newLocationId) return;
+    if (!item || !newLocationPath.trim()) return;
     setLoading(true);
 
     try {
+      const finalNewLocation = newLocationPath.trim();
+
       // 1. Update Inventory Balance Location
       const { error: updateError } = await supabase
         .from('inventory_balances')
         .update({ 
-          location_id: newLocationId,
+          location_path: finalNewLocation,
           last_updated: new Date().toISOString()
         })
         .eq('id', item.id);
@@ -68,15 +70,15 @@ export default function Transfer() {
       await supabase.from('inventory_movements').insert({
         type: 'TRANSFER',
         qr_code: item.qr_code,
-        from_location_id: item.location_id,
-        to_location_id: newLocationId,
+        from_location: item.location_path,
+        to_location: finalNewLocation,
         quantity: item.quantity,
         remark: 'Chuyển vị trí hàng'
       });
 
       setMessage({ type: 'success', text: 'Đã chuyển vị trí thành công.' });
       setItem(null);
-      setNewLocationId('');
+      setNewLocationPath('');
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
     } finally {
@@ -128,7 +130,7 @@ export default function Transfer() {
                 <p className="text-[10px] text-blue-600 font-bold uppercase mb-1">Vị trí cũ</p>
                 <div className="flex items-center justify-center gap-1 font-bold text-blue-700">
                   <MapPin className="w-4 h-4" />
-                  {item.warehouse_locations?.full_path}
+                  {item.location_path}
                 </div>
               </div>
               
@@ -138,16 +140,22 @@ export default function Transfer() {
 
               <div className="space-y-2">
                 <p className="text-[10px] text-slate-500 font-bold uppercase text-center">Vị trí mới</p>
-                <select
-                  value={newLocationId}
-                  onChange={(e) => setNewLocationId(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-center"
-                >
-                  <option value="">-- Chọn vị trí --</option>
-                  {locations.filter(l => l.id !== item.location_id).map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.full_path}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    value={newLocationPath}
+                    onChange={(e) => setNewLocationPath(e.target.value)}
+                    placeholder="Nhập vị trí mới..."
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-center"
+                    list="location-suggestions"
+                  />
+                  <datalist id="location-suggestions">
+                    {locations.map(loc => (
+                      <option key={loc.id} value={loc.full_path} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
             </div>
 
@@ -160,7 +168,7 @@ export default function Transfer() {
               </button>
               <button
                 onClick={handleTransfer}
-                disabled={!newLocationId || loading}
+                disabled={!newLocationPath.trim() || loading}
                 className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-100 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
               >
                 {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Save className="w-5 h-5" /> Xác nhận chuyển</>}

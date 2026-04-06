@@ -6,7 +6,8 @@ import {
   Download, 
   MapPin, 
   Package,
-  ArrowUpDown
+  ArrowUpDown,
+  Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { InventoryBalance } from '../types';
@@ -14,8 +15,10 @@ import { formatDate } from '../lib/utils';
 
 export default function Inventory() {
   const [inventory, setInventory] = useState<InventoryBalance[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
     fetchInventory();
@@ -23,16 +26,85 @@ export default function Inventory() {
 
   async function fetchInventory() {
     setLoading(true);
+    // Fetch from the optimized database view
     const { data, error } = await supabase
-      .from('inventory_balances')
-      .select('*, warehouse_locations(*)');
+      .from('inventory_by_rpro')
+      .select('*')
+      .order('last_updated', { ascending: false });
     
-    if (data) setInventory(data);
+    if (data) {
+      setInventory(data);
+    }
     setLoading(false);
   }
 
+  const toggleSelectItem = (id: string) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedItems.size === inventory.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(inventory.map(item => `${item.so}|${item.rpro}`)));
+    }
+  };
+
+  const deleteItem = async (so: string, rpro: string) => {
+    let query = supabase.from('inventory_balances').delete();
+    
+    if (so) query = query.eq('so', so);
+    else query = query.is('so', null);
+    
+    if (rpro) query = query.eq('rpro', rpro);
+    else query = query.is('rpro', null);
+
+    const { error } = await query;
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: `Đã xóa tồn kho cho SO: ${so}, RPRO: ${rpro}` });
+      fetchInventory();
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (selectedItems.size === 0) return;
+
+    setLoading(true);
+    try {
+      const selectedIds = Array.from(selectedItems) as string[];
+      for (const id of selectedIds) {
+        const [so, rpro] = id.split('|');
+        let query = supabase.from('inventory_balances').delete();
+        
+        if (so && so !== 'null') query = query.eq('so', so);
+        else query = query.is('so', null);
+        
+        if (rpro && rpro !== 'null') query = query.eq('rpro', rpro);
+        else query = query.is('rpro', null);
+
+        await query;
+      }
+      setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} mục tồn kho thành công.` });
+      setSelectedItems(new Set());
+      fetchInventory();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredInventory = inventory.filter(item => 
-    item.qr_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.qr_code && item.qr_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.rpro && item.rpro.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.so && item.so.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.kh && item.kh.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -40,13 +112,13 @@ export default function Inventory() {
 
   const exportToExcel = () => {
     const data = filteredInventory.map(item => ({
-      'Mã QR': item.qr_code,
-      'SO': item.so,
       'RPRO': item.rpro,
+      'SO': item.so,
       'Khách hàng': item.kh,
-      'Số lượng': item.quantity,
-      'Loại thùng': item.box_type,
-      'Vị trí': item.warehouse_locations?.full_path,
+      'Tổng số lượng': item.total_quantity,
+      'Số kiện': item.items_count,
+      'Loại thùng (Mới nhất)': item.box_type,
+      'Vị trí (Mới nhất)': item.location_path,
       'Cập nhật cuối': formatDate(item.last_updated)
     }));
 
@@ -63,14 +135,35 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold text-slate-900">Quản lý tồn kho</h1>
           <p className="text-slate-500">Chi tiết tồn kho theo từng vị trí</p>
         </div>
-        <button
-          onClick={exportToExcel}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
-        >
-          <Download className="w-4 h-4" />
-          Xuất Excel
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {selectedItems.size > 0 && (
+            <button
+              onClick={deleteSelected}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              Xóa đã chọn ({selectedItems.size})
+            </button>
+          )}
+          <button
+            onClick={exportToExcel}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
+          >
+            <Download className="w-4 h-4" />
+            Xuất Excel
+          </button>
+        </div>
       </div>
+
+      {message && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+        }`}>
+          <Package className="w-5 h-5" />
+          <p className="text-sm font-medium">{message.text}</p>
+          <button onClick={() => setMessage(null)} className="ml-auto text-xs font-bold uppercase">Đóng</button>
+        </div>
+      )}
 
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
@@ -97,53 +190,82 @@ export default function Inventory() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse border border-slate-200">
             <thead>
-              <tr className="bg-slate-50">
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Hàng hóa</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Khách hàng</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Số lượng</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vị trí</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Cập nhật cuối</th>
+              <tr className="bg-[#002060] text-white">
+                <th className="px-2 py-3 border border-slate-300 text-center">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedItems.size === inventory.length && inventory.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                     <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                     <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
                   </td>
                 </tr>
               ) : (
-                filteredInventory.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-900">{item.rpro || item.so}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{item.qr_code}</div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{item.kh}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="font-bold text-slate-900">{item.quantity}</span>
-                      <div className="text-[10px] text-slate-400">{item.box_type}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1 text-sm font-bold text-blue-600">
-                        <MapPin className="w-3 h-3" />
-                        {item.warehouse_locations?.full_path}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-xs text-slate-500">
-                      {formatDate(item.last_updated)}
-                    </td>
-                  </tr>
-                ))
+                filteredInventory.map((item: any) => {
+                  const itemKey = `${item.so}|${item.rpro}`;
+                  return (
+                    <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(itemKey) ? 'bg-blue-50' : ''}`}>
+                      <td className="px-2 py-3 border border-slate-200 text-center">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedItems.has(itemKey)}
+                          onChange={() => toggleSelectItem(itemKey)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">
+                        {item.so}|{item.rpro}
+                      </td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
+                        {item.items_count} / {item.total_boxes || '?'}
+                      </td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                        <div className="flex items-center justify-center gap-1 text-blue-600 font-bold">
+                          <MapPin className="w-3 h-3" />
+                          {item.location_path}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                        {formatDate(item.last_updated)}
+                      </td>
+                      <td className="px-2 py-3 border border-slate-200 text-center">
+                        <button 
+                          onClick={() => deleteItem(item.so, item.rpro)}
+                          className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

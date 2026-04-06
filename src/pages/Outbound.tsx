@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { parseQRCode } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
@@ -11,115 +11,867 @@ import {
   Package,
   MapPin,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  FileText,
+  History,
+  Upload,
+  Download,
+  Filter,
+  ArrowUpDown,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
+import * as XLSX from 'xlsx';
+import { formatDate } from '../lib/utils';
 
 export default function Outbound() {
+  const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>([]);
+  const [selectedScanned, setSelectedScanned] = useState<Set<number>>(new Set());
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  
+  // Scan configuration state
+  const [manualQR, setManualQR] = useState('');
+  const [locationInput, setLocationInput] = useState('');
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
+  const [plNoInput, setPlNoInput] = useState('');
+
+  // Data xuất state
+  const [outboundData, setOutboundData] = useState<any[]>([]);
+  const [selectedOutbound, setSelectedOutbound] = useState<Set<string>>(new Set());
+  const [outboundLoading, setOutboundLoading] = useState(false);
+
+  // PL state
+  const [plItems, setPlItems] = useState<any[]>([]);
+  const [plNumbers, setPlNumbers] = useState<string[]>([]);
+  const [sourceFiles, setSourceFiles] = useState<Array<{ name: string, status: 'pending' | 'success' | 'error', data: any[], error?: string }>>([]);
+  const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [editingType, setEditingType] = useState<'scan' | 'pl' | null>(null);
+  const [dataSubTab, setDataSubTab] = useState<'scan' | 'pl'>('scan');
+
+  useEffect(() => {
+    fetchLocations();
+    fetchInventoryBalances();
+    fetchCurrentPLItems();
+    fetchCurrentScannedItems();
+    if (activeTab === 'data') {
+      fetchOutboundData();
+    }
+  }, [activeTab]);
+
+  const plItemStats = useMemo(() => {
+    const rproCounts = new Map<string, number>();
+    const soCounts = new Map<string, number>();
+    
+    scannedItems.forEach(s => {
+      if (s.rpro) {
+        rproCounts.set(s.rpro, (rproCounts.get(s.rpro) || 0) + 1);
+      }
+      if (s.so) {
+        soCounts.set(s.so, (soCounts.get(s.so) || 0) + 1);
+      }
+    });
+
+    const rproInv = new Map<string, any>();
+    const soInv = new Map<string, any>();
+    
+    inventoryBalances.forEach(inv => {
+      if (inv.rpro && !rproInv.has(inv.rpro)) rproInv.set(inv.rpro, inv);
+      if (inv.so && !soInv.has(inv.so)) soInv.set(inv.so, inv);
+    });
+
+    return { rproCounts, soCounts, rproInv, soInv };
+  }, [scannedItems, inventoryBalances]);
+
+  const filteredOutbound = useMemo(() => {
+    return outboundData.filter(d => d.type === (dataSubTab === 'scan' ? 'SCAN' : 'PL'));
+  }, [outboundData, dataSubTab]);
+
+  async function fetchCurrentScannedItems() {
+    const { data } = await supabase
+      .from('current_scanned_items')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (data) {
+      const items = data.map(item => ({
+        id: item.id,
+        qrCode: item.qr_code,
+        so: item.so,
+        rpro: item.rpro,
+        kh: item.kh,
+        totalBoxes: item.total_boxes,
+        status: item.status,
+        note: item.note,
+        outQty: item.out_qty,
+        plNo: item.pl_no,
+        locationPath: item.location_path,
+        isSaved: item.is_saved,
+        date: item.scan_date,
+        inventory_id: item.inventory_id,
+        inventory: item.inventory_id ? { id: item.inventory_id, location_path: item.location_path } : null 
+      }));
+      setScannedItems(items);
+      setHasUnsavedChanges(items.some(item => !item.isSaved));
+    }
+  }
+
+  async function fetchCurrentPLItems() {
+    const { data } = await supabase.from('current_pl_items').select('*').order('created_at', { ascending: true });
+    if (data) {
+      setPlItems(data.map(item => ({
+        id: item.id,
+        plNo: item.pl_no,
+        so: item.so,
+        rpro: item.rpro,
+        kh: item.kh,
+        qty: item.qty,
+        totalBoxes: item.total_boxes
+      })));
+      
+      const uniquePLs = Array.from(new Set(data.map(item => item.pl_no).filter(pl => pl !== '')));
+      setPlNumbers(uniquePLs);
+      if (plNoInput === '' && uniquePLs.length > 0) setPlNoInput(uniquePLs[0]);
+    }
+  }
+
+  async function fetchInventoryBalances() {
+    const { data } = await supabase.from('inventory_balances').select('*');
+    if (data) setInventoryBalances(data);
+  }
+
+  async function fetchLocations() {
+    const { data } = await supabase.from('warehouse_locations').select('*');
+    if (data) setLocations(data);
+  }
+
+  const handleProcessManual = async () => {
+    if (!manualQR.trim()) return;
+    setLoading(true);
+    try {
+      const lines = manualQR.split('\n').filter(line => line.trim() !== '');
+      const parsedItems = lines.map(line => parseQRCode(line.trim()));
+      
+      // Bulk lookups for efficiency
+      const qrCodes = parsedItems.map(p => p.qrCode);
+      const { data: inventories } = await supabase.from('inventory_balances').select('*').in('qr_code', qrCodes);
+      
+      const sos = parsedItems.map(p => p.so).filter(Boolean);
+      const rpros = parsedItems.map(p => p.rpro).filter(Boolean);
+      
+      let sourceMatches: any[] = [];
+      if (sos.length > 0 || rpros.length > 0) {
+        let query = supabase.from('source_import_lines').select('*');
+        const filters = [];
+        if (sos.length > 0) filters.push(`so.in.(${sos.map(s => `"${s}"`).join(',')})`);
+        if (rpros.length > 0) filters.push(`rpro.in.(${rpros.map(r => `"${r}"`).join(',')})`);
+        const { data } = await query.or(filters.join(','));
+        if (data) sourceMatches = data;
+      }
+
+      const itemsToInsert = parsedItems.map(parsed => {
+        const inventory = inventories?.find(i => i.qr_code === parsed.qrCode);
+        const sourceMatch = sourceMatches.find(s => 
+          (parsed.rpro && s.rpro === parsed.rpro) || (parsed.so && s.so === parsed.so)
+        );
+        const plMatch = plItems.find(item => 
+          (parsed.rpro && item.rpro ? item.rpro === parsed.rpro : item.so === parsed.so)
+        );
+
+        let status = plMatch ? 'OK' : 'Wrong';
+        let note = plMatch ? '' : 'Không khớp danh sách PL';
+        if (!inventory) note = note ? note + ' & Không có trong tồn kho' : 'Không có trong tồn kho';
+        else if (parsed.quantity > inventory.quantity) note = note ? note + ' & Xuất vượt tồn' : 'Xuất vượt tồn';
+
+        return {
+          qr_code: parsed.qrCode,
+          so: parsed.so,
+          rpro: parsed.rpro,
+          kh: plMatch ? plMatch.kh : (sourceMatch ? sourceMatch.kh : 'N/A'),
+          pl_no: plMatch ? plMatch.plNo : 'N/A',
+          out_qty: parsed.quantity,
+          total_boxes: plMatch ? plMatch.totalBoxes : (sourceMatch ? sourceMatch.totalBoxes : 0),
+          location_path: inventory?.location_path || 'N/A',
+          status,
+          note,
+          inventory_id: inventory?.id || null,
+          is_saved: false,
+          scan_date: new Date().toISOString()
+        };
+      });
+
+      const { data: insertData, error } = await supabase
+        .from('current_scanned_items')
+        .insert(itemsToInsert)
+        .select();
+
+      if (error) throw error;
+
+      if (insertData) {
+        const newItemsForState = insertData.map(dbItem => ({
+          id: dbItem.id,
+          qrCode: dbItem.qr_code,
+          so: dbItem.so,
+          rpro: dbItem.rpro,
+          kh: dbItem.kh,
+          totalBoxes: dbItem.total_boxes,
+          status: dbItem.status,
+          note: dbItem.note,
+          outQty: dbItem.out_qty,
+          plNo: dbItem.pl_no,
+          locationPath: dbItem.location_path,
+          isSaved: dbItem.is_saved,
+          date: dbItem.scan_date,
+          inventory_id: dbItem.inventory_id,
+          inventory: dbItem.inventory_id ? { id: dbItem.inventory_id, location_path: dbItem.location_path } : null
+        }));
+        setScannedItems(prev => [...newItemsForState, ...prev]);
+        setHasUnsavedChanges(true);
+      }
+
+      setMessage({ type: 'success', text: `Đã xử lý và thêm ${itemsToInsert.length} kiện hàng vào danh sách chờ xuất.` });
+      setManualQR('');
+    } catch (error: any) {
+      console.error('Manual process error:', error);
+      setMessage({ type: 'error', text: 'Lỗi xử lý mã: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveScannedToHistory = async () => {
+    const unsavedItems = scannedItems.filter(item => !item.isSaved);
+    if (unsavedItems.length === 0) return;
+    
+    setLoading(true);
+    try {
+      // Insert into outbound_transactions (Data xuất)
+      const { error: txError } = await supabase.from('outbound_transactions').insert(
+        unsavedItems.map(item => ({
+          type: 'SCAN',
+          qr_code: item.qrCode,
+          so: item.so,
+          rpro: item.rpro,
+          kh: item.kh,
+          pl_no: item.plNo,
+          quantity: item.outQty,
+          location_path: item.locationPath,
+          status: item.status === 'OK' ? 'completed' : 'warning',
+          note: item.note,
+          device_info: navigator.userAgent
+        }))
+      );
+
+      if (txError) throw txError;
+
+      // Update is_saved in current_scanned_items
+      const idsToUpdate = unsavedItems.map(item => item.id);
+      const { error: updateError } = await supabase
+        .from('current_scanned_items')
+        .update({ is_saved: true })
+        .in('id', idsToUpdate);
+
+      if (updateError) throw updateError;
+
+      setMessage({ type: 'success', text: `Đã lưu ${unsavedItems.length} mã vào Data xuất.` });
+      await fetchCurrentScannedItems();
+    } catch (error: any) {
+      console.error('Save error:', error);
+      setMessage({ type: 'error', text: 'Lỗi khi lưu dữ liệu: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      
+      let finalMapped: any[] = [];
+      let foundSheet = false;
+
+      // Iterate through all sheets to find the valid one
+      for (const wsname of wb.SheetNames) {
+        const ws = wb.Sheets[wsname];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        if (rows.length < 5) continue;
+
+        // 1. Find Table Headers first (Try Row 7, 8, 9 - Indices 6, 7, 8)
+        const headerIndices = [6, 7, 8]; 
+        let tableHeaderRow = -1;
+        let soIdx = -1;
+
+        for (const idx of headerIndices) {
+          const headers = rows[idx] || [];
+          const foundIdx = headers.findIndex(h => 
+            String(h || '').trim().toLowerCase().includes('ovn order no')
+          );
+          if (foundIdx !== -1) {
+            tableHeaderRow = idx;
+            soIdx = foundIdx;
+            break;
+          }
+        }
+
+        if (tableHeaderRow !== -1) {
+          // 1. Find PL No by scanning rows 4, 5, 6 (indices 3, 4, 5)
+          let plNo = '';
+          for (let r = 3; r <= 5; r++) {
+            const row = rows[r] || [];
+            for (const cell of row) {
+              const cellStr = String(cell || '').trim();
+              if (cellStr.toUpperCase().includes('PL-')) {
+                const match = cellStr.match(/PL-[\w-]+/i);
+                if (match && !plNo) {
+                  plNo = match[0];
+                  break;
+                }
+              }
+            }
+            if (plNo) break;
+          }
+
+          // 2. Find Customer info (Old way: 3 rows above table header)
+          let customer = '';
+          const infoRowIdx = tableHeaderRow - 3;
+          if (infoRowIdx >= 0) {
+            const infoRow = rows[infoRowIdx] || [];
+            const infoRowString = infoRow.map(c => String(c || '').trim()).join(' ');
+            if (infoRowString.toLowerCase().includes('customer:')) {
+              const parts = infoRowString.split(/customer:/i);
+              if (parts[1]) {
+                customer = parts[1].split(/erp/i)[0].split(/delivery/i)[0].trim();
+                if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+              }
+            }
+          }
+
+          const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
+          const rproIdx = headers.indexOf('rpro');
+          const boxIdx = headers.findIndex(h => h.includes('total box'));
+          const qtyIdx = headers.indexOf('qty');
+
+          const mapped = [];
+          for (let i = tableHeaderRow + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || !row[soIdx]) continue;
+            
+            const soValue = String(row[soIdx]).trim();
+            if (soValue.toLowerCase() === 'total') break; // Stop at total row
+
+            if (soValue.toUpperCase().startsWith('SO-')) {
+              mapped.push({
+                plNo: plNo,
+                so: soValue,
+                rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
+                kh: customer,
+                qty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
+                totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
+              });
+            }
+          }
+
+          if (mapped.length > 0) {
+            finalMapped = mapped;
+            foundSheet = true;
+            break; // Found the correct sheet
+          }
+        }
+      }
+
+      if (foundSheet) {
+        setPlItems(finalMapped);
+        const uniquePLs = Array.from(new Set(finalMapped.map(item => item.plNo).filter(pl => pl !== '')));
+        setPlNumbers(uniquePLs);
+        if (uniquePLs.length > 0) setPlNoInput(uniquePLs[0]);
+        setMessage({ type: 'success', text: `Đã tìm thấy và tải lên ${finalMapped.length} dòng dữ liệu từ file PL.` });
+      } else {
+        setMessage({ type: 'error', text: 'Không tìm thấy Sheet nào có định dạng "DELIVERY NOTE" hợp lệ.' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleSourceFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setLoading(true);
+    const newSourceFiles: any[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const data = await new Promise<any[]>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+              try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                
+                let sheetMapped: any[] = [];
+                let foundInSheet = false;
+
+                for (const wsname of wb.SheetNames) {
+                  const ws = wb.Sheets[wsname];
+                  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                  
+                  if (rows.length < 5) continue;
+
+                  // 1. Find Table Headers first (Try Row 7, 8, 9 - Indices 6, 7, 8)
+                  const headerIndices = [6, 7, 8]; 
+                  let tableHeaderRow = -1;
+                  let soIdx = -1;
+
+                  for (const idx of headerIndices) {
+                    const headers = rows[idx] || [];
+                    const foundIdx = headers.findIndex(h => 
+                      String(h || '').trim().toLowerCase().includes('ovn order no')
+                    );
+                    if (foundIdx !== -1) {
+                      tableHeaderRow = idx;
+                      soIdx = foundIdx;
+                      break;
+                    }
+                  }
+
+                  if (tableHeaderRow !== -1) {
+                    // 1. Find PL No by scanning rows 4, 5, 6 (indices 3, 4, 5)
+                    let plNo = '';
+                    for (let r = 3; r <= 5; r++) {
+                      const row = rows[r] || [];
+                      for (const cell of row) {
+                        const cellStr = String(cell || '').trim();
+                        if (cellStr.toUpperCase().includes('PL-')) {
+                          const match = cellStr.match(/PL-[\w-]+/i);
+                          if (match && !plNo) {
+                            plNo = match[0];
+                            break;
+                          }
+                        }
+                      }
+                      if (plNo) break;
+                    }
+
+                    // 2. Find Customer info (Old way: 3 rows above table header)
+                    let customer = '';
+                    const infoRowIdx = tableHeaderRow - 3;
+                    if (infoRowIdx >= 0) {
+                      const infoRow = rows[infoRowIdx] || [];
+                      const infoRowString = infoRow.map(c => String(c || '').trim()).join(' ');
+                      if (infoRowString.toLowerCase().includes('customer:')) {
+                        const parts = infoRowString.split(/customer:/i);
+                        if (parts[1]) {
+                          customer = parts[1].split(/erp/i)[0].split(/delivery/i)[0].trim();
+                          if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+                        }
+                      }
+                    }
+
+                    const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
+                    const rproIdx = headers.indexOf('rpro');
+                    const boxIdx = headers.findIndex(h => h.includes('total box'));
+                    const qtyIdx = headers.indexOf('qty');
+
+                    const mapped = [];
+                    for (let j = tableHeaderRow + 1; j < rows.length; j++) {
+                      const row = rows[j];
+                      if (!row || !row[soIdx]) continue;
+                      
+                      const soValue = String(row[soIdx]).trim();
+                      if (soValue.toLowerCase() === 'total') break;
+
+                      if (soValue.toUpperCase().startsWith('SO-')) {
+                        mapped.push({
+                          date: new Date().toISOString(),
+                          so: soValue,
+                          rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
+                          kh: customer,
+                          plNo: plNo,
+                          totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
+                          outQty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
+                          status: 'ok',
+                          note: '',
+                          inventory: null
+                        });
+                      }
+                    }
+                    if (mapped.length > 0) {
+                      sheetMapped = mapped;
+                      foundInSheet = true;
+                      break;
+                    }
+                  }
+                }
+                resolve(sheetMapped);
+              } catch (err) {
+                reject(err);
+              }
+            };
+            reader.onerror = () => reject(new Error('Lỗi đọc file'));
+            reader.readAsBinaryString(file);
+          });
+          
+          newSourceFiles.push({
+            name: file.name,
+            status: data.length > 0 ? 'success' : 'error',
+            data: data,
+            error: data.length === 0 ? 'Không tìm thấy dữ liệu đơn hàng hợp lệ' : undefined
+          });
+        } catch (err: any) {
+          newSourceFiles.push({
+            name: file.name,
+            status: 'error',
+            data: [],
+            error: err.message
+          });
+        }
+      }
+
+      setSourceFiles(prev => [...prev, ...newSourceFiles]);
+      setMessage({ type: 'success', text: `Đã tải lên ${newSourceFiles.length} file nguồn vào danh sách.` });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xử lý file: ' + err.message });
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleCopyPasteSourceFiles = async () => {
+    const successFiles = sourceFiles.filter(f => f.status === 'success');
+    if (successFiles.length === 0) {
+      setMessage({ type: 'error', text: 'Không có file nguồn hợp lệ để sao chép.' });
+      return;
+    }
+
+    const allPlItemsToInsert: any[] = [];
+
+    successFiles.forEach(file => {
+      file.data.forEach(item => {
+        allPlItemsToInsert.push({
+          pl_no: item.plNo,
+          so: item.so,
+          rpro: item.rpro,
+          kh: item.kh,
+          qty: item.outQty,
+          total_boxes: item.totalBoxes
+        });
+      });
+    });
+
+    const { error } = await supabase.from('current_pl_items').insert(allPlItemsToInsert);
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi lưu danh sách PL: ' + error.message });
+      return;
+    }
+
+    await fetchCurrentPLItems();
+    setMessage({ type: 'success', text: `Đã sao chép ${allPlItemsToInsert.length} dòng vào danh sách PL hiện tại.` });
+    // Clear source files after successful copy
+    setSourceFiles([]);
+  };
+
+  async function fetchOutboundData() {
+    setOutboundLoading(true);
+    const { data, error } = await supabase
+      .from('outbound_transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    
+    if (data) setOutboundData(data);
+    setOutboundLoading(false);
+  }
+
+  const deleteOutbound = async (id: string) => {
+    const { error } = await supabase.from('outbound_transactions').delete().eq('id', id);
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: 'Đã xóa bản ghi xuất kho.' });
+      fetchOutboundData();
+    }
+  };
+
+  const deleteSelectedOutbound = async () => {
+    if (selectedOutbound.size === 0) return;
+    const { error } = await supabase
+      .from('outbound_transactions')
+      .delete()
+      .in('id', Array.from(selectedOutbound));
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: `Đã xóa ${selectedOutbound.size} bản ghi xuất kho.` });
+      setSelectedOutbound(new Set());
+      fetchOutboundData();
+    }
+  };
 
   const handleScan = async (qrData: string) => {
     const parsed = parseQRCode(qrData);
     
     if (scannedItems.some(item => item.qrCode === parsed.qrCode)) return;
 
-    // 1. Find in Inventory
-    const { data: inventory, error } = await supabase
-      .from('inventory_balances')
-      .select('*, warehouse_locations(*)')
-      .eq('qr_code', parsed.qrCode)
-      .single();
+    // 1. Find in Inventory (Local lookup for speed)
+    const inventory = inventoryBalances.find(inv => inv.qr_code === parsed.qrCode);
 
-    // 2. Match with Source Data
-    const { data: sourceMatch } = await supabase
-      .from('source_import_lines')
-      .select('*')
-      .or(`rpro.eq.${parsed.rpro},so.eq.${parsed.so}`)
-      .limit(1)
-      .single();
+    // 2. Match with Source Data (Remote lookup as this table might be large)
+    let sourceMatchQuery = supabase.from('source_import_lines').select('*');
+    if (parsed.rpro && parsed.so) {
+      sourceMatchQuery = sourceMatchQuery.or(`rpro.eq.${parsed.rpro},so.eq.${parsed.so}`);
+    } else if (parsed.rpro) {
+      sourceMatchQuery = sourceMatchQuery.eq('rpro', parsed.rpro);
+    } else if (parsed.so) {
+      sourceMatchQuery = sourceMatchQuery.eq('so', parsed.so);
+    } else {
+      sourceMatchQuery = sourceMatchQuery.eq('id', 'none');
+    }
+    const { data: sourceMatch } = await sourceMatchQuery.limit(1).single();
 
-    let status = 'ok';
-    let note = '';
+    // 3. Match with PL automatically if available
+    let plMatch = null;
+    if (plItems.length > 0) {
+      plMatch = plItems.find(item => 
+        (parsed.rpro && item.rpro ? item.rpro === parsed.rpro : item.so === parsed.so)
+      );
+    }
 
+    let status = plMatch ? 'OK' : 'Wrong';
+    let note = plMatch ? '' : 'Không khớp danh sách PL';
+
+    // Additional checks for internal warnings, but status is primarily PL match
     if (!inventory) {
-      status = 'Wrong';
-      note = 'Không có trong tồn kho';
-    } else if (!sourceMatch) {
-      status = 'Wrong';
-      note = 'Không khớp file nguồn';
+      note = note ? note + ' & Không có trong tồn kho' : 'Không có trong tồn kho';
     } else if (parsed.quantity > inventory.quantity) {
-      status = 'Wrong';
-      note = 'Xuất vượt tồn';
+      note = note ? note + ' & Xuất vượt tồn' : 'Xuất vượt tồn';
     }
 
     const newItem = {
-      ...parsed,
-      inventory: inventory || null,
-      sourceMatch: sourceMatch || null,
+      qr_code: parsed.qrCode,
+      so: parsed.so,
+      rpro: parsed.rpro,
+      kh: plMatch ? plMatch.kh : (sourceMatch ? sourceMatch.kh : 'N/A'),
+      total_boxes: plMatch ? plMatch.totalBoxes : (sourceMatch ? sourceMatch.totalBoxes : 0),
       status,
       note,
-      outQty: parsed.quantity,
+      out_qty: parsed.quantity,
+      pl_no: plMatch ? plMatch.plNo : 'N/A',
+      location_path: inventory?.location_path || 'N/A',
+      is_saved: false,
+      scan_date: new Date().toISOString(),
+      inventory_id: inventory?.id || null
     };
 
-    setScannedItems(prev => [newItem, ...prev]);
+    const { data: insertData, error: insertError } = await supabase
+      .from('current_scanned_items')
+      .insert(newItem)
+      .select();
+
+    if (insertError) {
+      setMessage({ type: 'error', text: 'Lỗi khi lưu mã quét: ' + insertError.message });
+      return;
+    }
+
+    if (insertData && insertData.length > 0) {
+      const dbItem = insertData[0];
+      const newItemForState = {
+        id: dbItem.id,
+        qrCode: dbItem.qr_code,
+        so: dbItem.so,
+        rpro: dbItem.rpro,
+        kh: dbItem.kh,
+        totalBoxes: dbItem.total_boxes,
+        status: dbItem.status,
+        note: dbItem.note,
+        outQty: dbItem.out_qty,
+        plNo: dbItem.pl_no,
+        locationPath: dbItem.location_path,
+        isSaved: dbItem.is_saved,
+        date: dbItem.scan_date,
+        inventory_id: dbItem.inventory_id,
+        inventory: dbItem.inventory_id ? { id: dbItem.inventory_id, location_path: dbItem.location_path } : null
+      };
+      setScannedItems(prev => [newItemForState, ...prev]);
+      setHasUnsavedChanges(true);
+    }
     setIsScanning(false);
   };
 
   const handleConfirmOutbound = async () => {
     if (scannedItems.length === 0) return;
     setLoading(true);
-    
     try {
-      for (const item of scannedItems) {
-        if (!item.inventory) continue;
+      const payload = {
+        device_info: navigator.userAgent,
+        items: scannedItems.map(item => ({
+          qrCode: item.qrCode,
+          so: item.so,
+          rpro: item.rpro,
+          kh: item.kh,
+          plNo: item.plNo,
+          outQty: item.outQty,
+          locationPath: item.locationPath,
+          status: item.status,
+          note: item.note,
+          inventoryId: item.inventory_id,
+          isSaved: item.isSaved
+        }))
+      };
 
-        // 1. Record Outbound Transaction
-        const { data: outbound, error: outboundError } = await supabase
-          .from('outbound_transactions')
-          .insert({
-            qr_code: item.qrCode,
-            so: item.so,
-            rpro: item.rpro,
-            kh: item.kh,
-            quantity: item.outQty,
-            location_id: item.inventory.location_id,
-            status: item.status === 'ok' ? 'completed' : 'warning',
-            note: item.note,
-            device_info: navigator.userAgent
-          })
-          .select()
-          .single();
+      const { error } = await supabase.rpc('process_outbound_v1', { p_data: payload });
 
-        if (outboundError) throw outboundError;
+      if (error) throw error;
 
-        // 2. Update Inventory Balance (Subtract)
-        const newQty = item.inventory.quantity - item.outQty;
-        if (newQty <= 0) {
-          await supabase.from('inventory_balances').delete().eq('id', item.inventory.id);
-        } else {
-          await supabase.from('inventory_balances').update({ quantity: newQty }).eq('id', item.inventory.id);
-        }
-
-        // 3. Record Movement
-        await supabase.from('inventory_movements').insert({
-          type: 'OUTBOUND',
-          qr_code: item.qrCode,
-          from_location_id: item.inventory.location_id,
-          quantity: item.outQty,
-          reference_id: outbound.id,
-          remark: `Xuất kho: ${item.note || 'Bình thường'}`
-        });
-      }
+      // Clear current scanned items from database
+      await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
       setMessage({ type: 'success', text: `Đã xuất kho thành công ${scannedItems.length} kiện hàng.` });
       setScannedItems([]);
+      setSelectedScanned(new Set());
+      fetchOutboundData();
     } catch (error: any) {
       console.error('Outbound error:', error);
       setMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra khi xuất kho.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelectScanned = (index: number) => {
+    const newSelected = new Set(selectedScanned);
+    if (newSelected.has(index)) newSelected.delete(index);
+    else newSelected.add(index);
+    setSelectedScanned(newSelected);
+  };
+
+  const deleteSelectedScanned = async () => {
+    const idsToDelete = Array.from(selectedScanned).map(index => scannedItems[index].id);
+    const { error } = await supabase.from('current_scanned_items').delete().in('id', idsToDelete);
+    
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa mã quét: ' + error.message });
+    } else {
+      await fetchCurrentScannedItems();
+      setSelectedScanned(new Set());
+    }
+  };
+
+  const handleEditItem = (item: any, index: number, type: 'scan' | 'pl') => {
+    setEditingItem({ ...item, index });
+    setEditingType(type);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingItem || !editingType) return;
+
+    if (editingType === 'scan') {
+      const { error } = await supabase
+        .from('current_scanned_items')
+        .update({
+          qr_code: editingItem.qrCode,
+          so: editingItem.so,
+          rpro: editingItem.rpro,
+          kh: editingItem.kh,
+          total_boxes: editingItem.totalBoxes,
+          status: editingItem.status,
+          note: editingItem.note,
+          out_qty: editingItem.outQty,
+          pl_no: editingItem.plNo,
+          location_path: editingItem.locationPath,
+          is_saved: false
+        })
+        .eq('id', editingItem.id);
+
+      if (error) {
+        setMessage({ type: 'error', text: 'Lỗi khi cập nhật mã quét: ' + error.message });
+        return;
+      }
+      await fetchCurrentScannedItems();
+    } else {
+      const { error } = await supabase
+        .from('current_pl_items')
+        .update({
+          pl_no: editingItem.plNo,
+          so: editingItem.so,
+          rpro: editingItem.rpro,
+          kh: editingItem.kh,
+          qty: editingItem.qty,
+          total_boxes: editingItem.totalBoxes
+        })
+        .eq('id', editingItem.id);
+
+      if (error) {
+        setMessage({ type: 'error', text: 'Lỗi khi cập nhật PL: ' + error.message });
+        return;
+      }
+      await fetchCurrentPLItems();
+    }
+    setEditingItem(null);
+    setEditingType(null);
+  };
+
+  const handleDeletePLItem = async (id: string) => {
+    const { error } = await supabase.from('current_pl_items').delete().eq('id', id);
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa PL: ' + error.message });
+    } else {
+      await fetchCurrentPLItems();
+    }
+  };
+
+  const handleSavePLToOutbound = async () => {
+    if (plItems.length === 0) return;
+    setLoading(true);
+    try {
+      // Pre-calculate scan counts and inventory matches to avoid O(N*M) in the map
+      const itemsToSave = plItems.map(item => {
+        const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+
+        const diff = item.totalBoxes - scanCount;
+        let statusText = 'OK';
+        if (diff > 0) statusText = `Thiếu (${diff})`;
+        else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
+
+        const invMatch = item.rpro ? plItemStats.rproInv.get(item.rpro) : plItemStats.soInv.get(item.so);
+
+        return {
+          type: 'PL',
+          qr_code: `${item.so}|${item.rpro}`,
+          so: item.so,
+          rpro: item.rpro,
+          kh: item.kh,
+          pl_no: item.plNo,
+          quantity: item.totalBoxes,
+          scan_count: scanCount,
+          status: statusText,
+          location_path: invMatch ? invMatch.location_path : 'N/A',
+          note: 'Lưu từ Danh sách PL hiện tại',
+          device_info: navigator.userAgent
+        };
+      });
+
+      const { error } = await supabase.from('outbound_transactions').insert(itemsToSave);
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `Đã lưu ${itemsToSave.length} dòng dữ liệu PL vào Data xuất.` });
+      fetchOutboundData();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi lưu dữ liệu PL: ' + error.message });
     } finally {
       setLoading(false);
     }
@@ -130,124 +882,723 @@ export default function Outbound() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Xuất kho hàng hóa</h1>
-          <p className="text-slate-500">Scan QR để thực hiện xuất kho và đối chiếu</p>
+          <p className="text-slate-500">Quản lý quy trình xuất kho và đối chiếu</p>
         </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex p-1 bg-slate-100 rounded-2xl w-fit">
         <button
-          onClick={() => setIsScanning(!isScanning)}
-          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
-            isScanning ? 'bg-rose-500 text-white' : 'bg-orange-600 text-white hover:bg-orange-700'
+          onClick={() => setActiveTab('scan')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'scan' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <Scan className="w-5 h-5" />
-          {isScanning ? 'Dừng Scan' : 'Bắt đầu Scan'}
+          <Scan className="w-4 h-4" />
+          Scan xuất
+        </button>
+        <button
+          onClick={() => setActiveTab('pl')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          PL (Packing List)
+        </button>
+        <button
+          onClick={() => setActiveTab('data')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'data' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          Data xuất
         </button>
       </div>
 
-      <AnimatePresence>
-        {isScanning && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <QRScanner onScan={handleScan} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {message && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+        }`}>
+          <Package className="w-5 h-5" />
+          <p className="text-sm font-medium">{message.text}</p>
+          <button onClick={() => setMessage(null)} className="ml-auto text-xs font-bold uppercase">Đóng</button>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Danh sách xuất hàng</h2>
-            <div className="flex gap-4">
+      {activeTab === 'scan' && (
+        <div className="space-y-6">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setIsScanning(!isScanning)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
+                isScanning ? 'bg-rose-500 text-white' : 'bg-orange-600 text-white hover:bg-orange-700'
+              }`}
+            >
+              <Scan className="w-5 h-5" />
+              {isScanning ? 'Dừng Scan' : 'Bắt đầu Scan'}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {isScanning && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-slate-900 p-4 rounded-2xl mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white text-sm font-bold uppercase tracking-wider">
+                      Đang ở chế độ: Scan Xuất
+                    </span>
+                  </div>
+                  <QRScanner onScan={handleScan} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Configuration Section */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">Cấu hình quét</h2>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Dán mã QR (Thủ công)</label>
+                    <textarea
+                      value={manualQR}
+                      onChange={(e) => setManualQR(e.target.value)}
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none h-32"
+                      placeholder="Dán dữ liệu QR tại đây... (Mỗi dòng 1 mã)"
+                    />
+                    <button
+                      onClick={handleProcessManual}
+                      className="w-full mt-2 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm"
+                    >
+                      Xử lý mã
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {scannedItems.length > 0 && (
                 <button
                   onClick={handleConfirmOutbound}
                   disabled={loading}
-                  className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50"
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-orange-100 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
-                  {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Save className="w-5 h-5" /> Xác nhận xuất ({scannedItems.length})</>}
+                  {loading ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Save className="w-6 h-6" />
+                      XÁC NHẬN XUẤT ({scannedItems.length})
+                    </>
+                  )}
                 </button>
               )}
-              <button onClick={() => setScannedItems([])} className="text-slate-400 hover:text-rose-500"><Trash2 className="w-5 h-5" /></button>
+            </div>
+
+            {/* Scanned List Section */}
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-slate-900">Danh sách chờ xuất</h2>
+                  <div className="flex gap-4">
+                    {scannedItems.length > 0 && (
+                      <button
+                        onClick={handleSaveScannedToHistory}
+                        disabled={loading || !hasUnsavedChanges}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400"
+                      >
+                        <Save className="w-4 h-4" />
+                        LƯU DATA XUẤT
+                      </button>
+                    )}
+                    {selectedScanned.size > 0 && (
+                      <button
+                        onClick={deleteSelectedScanned}
+                        className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Xóa đã chọn ({selectedScanned.size})
+                      </button>
+                    )}
+                    <button 
+                      onClick={async () => {
+                        const { error } = await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                        if (error) {
+                          setMessage({ type: 'error', text: 'Lỗi khi xóa danh sách: ' + error.message });
+                        } else {
+                          setScannedItems([]);
+                          setSelectedScanned(new Set());
+                          setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách chờ xuất.' });
+                        }
+                      }}
+                      className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                      title="Xóa danh sách"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse border border-slate-200">
+                    <thead>
+                      <tr className="bg-[#002060] text-white">
+                        <th className="px-2 py-3 border border-slate-300 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
+                            onChange={() => {
+                              if (selectedScanned.size === scannedItems.length) setSelectedScanned(new Set());
+                              else setSelectedScanned(new Set(scannedItems.map((_, i) => i)));
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">DATE</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">STATUS</th>
+                        <th className="px-2 py-3 border border-slate-300"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {scannedItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="px-6 py-12 text-center">
+                            <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                            <p className="text-slate-400 italic text-sm">Chưa có dữ liệu trong danh sách chờ xuất</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        scannedItems.map((item, index) => (
+                          <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(index) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
+                            <td className="px-2 py-3 border border-slate-200 text-center">
+                              <input 
+                                type="checkbox" 
+                                checked={selectedScanned.has(index)}
+                                onChange={() => toggleSelectScanned(index)}
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px] font-medium text-slate-700">
+                              {item.qrCode}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px] whitespace-nowrap">
+                              {new Date(item.date).toLocaleDateString('vi-VN')}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px] font-medium text-slate-700">
+                              {item.so}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px] font-bold text-orange-600">
+                              {item.rpro}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px]">
+                              {item.kh || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px]">
+                              {item.plNo}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px] font-bold">
+                              {item.totalBoxes}
+                            </td>
+                            <td className={`px-4 py-3 border border-slate-200 text-center text-[11px] font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {item.status}
+                            </td>
+                            <td className="px-2 py-3 border border-slate-200 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button 
+                                  onClick={() => handleEditItem(item, index, 'scan')}
+                                  className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'pl' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 space-y-6">
+              <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
+                <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Upload className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Tải lên PL nguồn</h3>
+                <p className="text-slate-500 mb-6 text-sm">
+                  Chọn một hoặc nhiều file Excel để nạp vào danh sách chờ xử lý.
+                </p>
+                <label className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-700 transition-all cursor-pointer inline-block w-full">
+                  Chọn file Excel
+                  <input type="file" multiple className="hidden" accept=".xlsx, .xls" onChange={handleSourceFilesUpload} />
+                </label>
+              </div>
+
+              {sourceFiles.length > 0 && (
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Danh sách PL nguồn</h3>
+                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full font-bold text-slate-500">
+                      {sourceFiles.length} FILE
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                    {sourceFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-bold text-slate-700 truncate">{file.name}</span>
+                          <span className="text-[10px] text-slate-400">{file.data.length} dòng dữ liệu</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {file.status === 'success' ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                          ) : (
+                            <div title={file.error}>
+                              <AlertCircle className="w-5 h-5 text-rose-500" />
+                            </div>
+                          )}
+                          <button 
+                            onClick={() => setSourceFiles(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={handleCopyPasteSourceFiles}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-100 transition-all"
+                  >
+                    <Copy className="w-5 h-5" />
+                    SAO CHÉP & DÁN VÀO PL HIỆN TẠI
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center text-orange-600 shadow-sm">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900">Danh sách PL hiện tại</h2>
+                      <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Current Packing List Data</p>
+                    </div>
+                  </div>
+                  {plItems.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-400 mr-2">{plItems.length} dòng</span>
+                      <button 
+                        onClick={handleSavePLToOutbound}
+                        disabled={loading}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                      >
+                        <Save className="w-3 h-3" />
+                        LƯU DATA XUẤT
+                      </button>
+                      <button 
+                        onClick={async () => { 
+                          const { error } = await supabase.from('current_pl_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                          if (error) {
+                            setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả PL: ' + error.message });
+                          } else {
+                            setPlItems([]); 
+                            setPlNumbers([]); 
+                            setPlNoInput(''); 
+                            setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách PL hiện tại.' });
+                          }
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold hover:bg-rose-100 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        XÓA TẤT CẢ
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {plItems.length === 0 ? (
+                  <div className="p-20 text-center">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                      <History className="w-10 h-10 text-slate-200" />
+                    </div>
+                    <p className="text-slate-400 italic text-sm">Chưa có dữ liệu Packing List được nạp</p>
+                    <p className="text-slate-300 text-xs mt-1">Hãy tải file nguồn và thực hiện "Sao chép & Dán"</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse border border-slate-200">
+                      <thead>
+                        <tr className="bg-[#002060] text-white">
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Scan Xuất</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Status</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Location</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {plItems.map((item, index) => {
+                          const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+
+                          const diff = item.totalBoxes - scanCount;
+                          let statusText = 'ok';
+                          let statusColor = 'text-emerald-600';
+                          
+                          if (diff > 0) {
+                            statusText = `Thiếu (${diff})`;
+                            statusColor = 'text-rose-600';
+                          } else if (diff < 0) {
+                            statusText = `Dư (${Math.abs(diff)})`;
+                            statusColor = 'text-amber-600';
+                          }
+
+                          const invMatch = item.rpro ? plItemStats.rproInv.get(item.rpro) : plItemStats.soInv.get(item.so);
+                          const location = invMatch ? invMatch.location_path : 'N/A';
+
+                          return (
+                            <tr key={index} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.so}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-orange-600">{item.rpro}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.kh}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.plNo}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold">{item.totalBoxes}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-blue-600">{scanCount}</td>
+                              <td className={`px-4 py-2 border border-slate-200 text-[11px] text-center font-bold ${statusColor}`}>{statusText}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-slate-500">{location}</td>
+                              <td className="px-4 py-2 border border-slate-200 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button 
+                                    onClick={() => handleEditItem(item, index, 'pl')}
+                                    className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeletePLItem(item.id)}
+                                    className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'data' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 bg-white p-1 rounded-2xl border border-slate-200 w-fit">
+              <button
+                onClick={() => setDataSubTab('scan')}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  dataSubTab === 'scan'
+                    ? 'bg-[#002060] text-white shadow-lg'
+                    : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                1. Danh sách scan
+              </button>
+              <button
+                onClick={() => setDataSubTab('pl')}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  dataSubTab === 'pl'
+                    ? 'bg-[#002060] text-white shadow-lg'
+                    : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                2. Danh sách PL
+              </button>
+            </div>
+            <div className="flex gap-2">
+              {selectedOutbound.size > 0 && (
+                <button
+                  onClick={deleteSelectedOutbound}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Xóa đã chọn ({selectedOutbound.size})
+                </button>
+              )}
+              <button className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium">
+                <Filter className="w-4 h-4" />
+                Lọc
+              </button>
+              <button className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium">
+                <Download className="w-4 h-4" />
+                Xuất Excel
+              </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            {scannedItems.length === 0 ? (
-              <div className="p-12 text-center">
-                <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                <p className="text-slate-400">Chưa có kiện hàng nào được scan để xuất</p>
-              </div>
-            ) : (
-              <table className="w-full text-left border-collapse">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse border border-slate-200">
                 <thead>
-                  <tr className="bg-slate-50">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Thông tin hàng</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Tồn kho / Vị trí</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Số lượng xuất</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Trạng thái</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ghi chú</th>
+                  <tr className="bg-[#002060] text-white">
+                    <th className="px-2 py-3 border border-slate-300 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedOutbound.size === filteredOutbound.length && filteredOutbound.length > 0}
+                        onChange={() => {
+                          if (selectedOutbound.size === filteredOutbound.length) setSelectedOutbound(new Set());
+                          else setSelectedOutbound(new Set(filteredOutbound.map(item => item.id)));
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </th>
+                    {dataSubTab === 'scan' ? (
+                      <>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">DATE</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">STATUS</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">DATE</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Scan Xuất</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Status</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Location</th>
+                      </>
+                    )}
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">THAO TÁC</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {scannedItems.map((item, index) => (
-                    <tr key={item.qrCode} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-bold text-slate-900">{item.rpro || item.so}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{item.qrCode}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {item.inventory ? (
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium text-slate-700">Tồn: {item.inventory.quantity}</div>
-                            <div className="flex items-center gap-1 text-xs text-blue-600 font-bold">
-                              <MapPin className="w-3 h-3" /> {item.inventory.warehouse_locations?.full_path}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-rose-500 font-bold">Hết hàng</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <input
-                          type="number"
-                          value={item.outQty}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            const newItems = [...scannedItems];
-                            newItems[index].outQty = val;
-                            if (item.inventory && val > item.inventory.quantity) {
-                              newItems[index].status = 'Wrong';
-                              newItems[index].note = 'Xuất vượt tồn';
-                            } else {
-                              newItems[index].status = 'ok';
-                              newItems[index].note = '';
-                            }
-                            setScannedItems(newItems);
-                          }}
-                          className="w-20 px-2 py-1 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${
-                          item.status === 'ok' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                        }`}>
-                          {item.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs text-slate-500 italic">{item.note}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                    <tbody className="divide-y divide-slate-100">
+                      {outboundLoading ? (
+                        <tr>
+                          <td colSpan={11} className="px-6 py-12 text-center">
+                            <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                          </td>
+                        </tr>
+                      ) : filteredOutbound.length === 0 ? (
+                        <tr>
+                          <td colSpan={11} className="px-6 py-12 text-center">
+                            <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                            <p className="text-slate-400">Chưa có dữ liệu {dataSubTab === 'scan' ? 'scan' : 'PL'} lưu trữ</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredOutbound.map((item) => (
+                            <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedOutbound.has(item.id) ? 'bg-blue-50' : ''} ${dataSubTab === 'scan' && item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
+                              <td className="px-2 py-3 border border-slate-200 text-center">
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedOutbound.has(item.id)}
+                                  onChange={() => {
+                                    const newSelected = new Set(selectedOutbound);
+                                    if (newSelected.has(item.id)) newSelected.delete(item.id);
+                                    else newSelected.add(item.id);
+                                    setSelectedOutbound(newSelected);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              {dataSubTab === 'scan' ? (
+                                <>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                                    {formatDate(item.created_at)}
+                                  </td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-orange-600">{item.rpro}</td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.kh || 'N/A'}</td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.pl_no || 'N/A'}</td>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.quantity}</td>
+                                  <td className={`px-4 py-3 text-[11px] border border-slate-200 text-center font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {item.status}
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                                    {formatDate(item.created_at)}
+                                  </td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.so}</td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-orange-600">{item.rpro}</td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.kh}</td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.pl_no}</td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold">{item.quantity}</td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-blue-600">{item.scan_count}</td>
+                                  <td className={`px-4 py-2 border border-slate-200 text-[11px] text-center font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {item.status}
+                                  </td>
+                                  <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">
+                                    <div className="flex items-center justify-center gap-1 text-blue-600 font-bold">
+                                      <MapPin className="w-3 h-3" />
+                                      {item.location_path}
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-4 py-3 border border-slate-200 text-center">
+                                <button 
+                                  onClick={() => deleteOutbound(item.id)}
+                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
               </table>
-            )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {editingItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h3 className="text-lg font-bold text-slate-900">Chỉnh sửa thông tin</h3>
+                <button onClick={() => setEditingItem(null)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <Trash2 className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">QR Code</label>
+                  <input 
+                    type="text" 
+                    value={editingItem.qrCode}
+                    onChange={(e) => setEditingItem({ ...editingItem, qrCode: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">OVN Order No (SO)</label>
+                  <input 
+                    type="text" 
+                    value={editingItem.so}
+                    onChange={(e) => setEditingItem({ ...editingItem, so: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">RPRO</label>
+                  <input 
+                    type="text" 
+                    value={editingItem.rpro}
+                    onChange={(e) => setEditingItem({ ...editingItem, rpro: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Khách hàng</label>
+                  <input 
+                    type="text" 
+                    value={editingItem.kh}
+                    onChange={(e) => setEditingItem({ ...editingItem, kh: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">PL No</label>
+                  <input 
+                    type="text" 
+                    value={editingItem.plNo}
+                    onChange={(e) => setEditingItem({ ...editingItem, plNo: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Total Box / Qty</label>
+                  <input 
+                    type="number" 
+                    value={editingType === 'scan' ? editingItem.totalBoxes : editingItem.totalBoxes}
+                    onChange={(e) => setEditingItem({ ...editingItem, totalBoxes: parseInt(e.target.value) || 0 })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50 flex gap-3">
+                <button 
+                  onClick={() => setEditingItem(null)}
+                  className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition-all"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={handleSaveEdit}
+                  className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

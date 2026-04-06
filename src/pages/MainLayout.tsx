@@ -63,7 +63,7 @@ export default function MainLayout() {
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <Warehouse className="text-white w-5 h-5" />
           </div>
-          <span className="font-bold text-slate-900">QR Warehouse</span>
+          <span className="font-bold text-slate-900">FG Management</span>
         </div>
         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-600">
           {isSidebarOpen ? <X /> : <Menu />}
@@ -84,8 +84,8 @@ export default function MainLayout() {
                 <Warehouse className="text-white w-6 h-6" />
               </div>
               <div>
-                <h1 className="font-bold text-slate-900 leading-tight">QR Warehouse</h1>
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Professional Edition</p>
+                <h1 className="font-bold text-slate-900 leading-tight">FG Management</h1>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Warehouse Solution</p>
               </div>
             </div>
 
@@ -110,7 +110,7 @@ export default function MainLayout() {
             </nav>
 
             <div className="p-4 border-t border-slate-100 text-center">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">QR Warehouse Pro v1.0</p>
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">FG Management v1.0</p>
             </div>
           </motion.aside>
         )}

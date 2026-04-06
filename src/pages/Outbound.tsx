@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { parseQRCode } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
@@ -299,7 +299,7 @@ export default function Outbound() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -381,7 +381,8 @@ export default function Outbound() {
             const soValue = String(row[soIdx]).trim();
             if (soValue.toLowerCase() === 'total') break; // Stop at total row
 
-            if (soValue.toUpperCase().startsWith('SO-')) {
+            const soUpper = soValue.toUpperCase();
+            if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
               mapped.push({
                 plNo: plNo,
                 so: soValue,
@@ -414,7 +415,7 @@ export default function Outbound() {
     reader.readAsBinaryString(file);
   };
 
-  const handleSourceFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSourceFilesUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -504,7 +505,8 @@ export default function Outbound() {
                       const soValue = String(row[soIdx]).trim();
                       if (soValue.toLowerCase() === 'total') break;
 
-                      if (soValue.toUpperCase().startsWith('SO-')) {
+                      const soUpper = soValue.toUpperCase();
+                      if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
                         mapped.push({
                           date: new Date().toISOString(),
                           so: soValue,
@@ -585,7 +587,10 @@ export default function Outbound() {
 
     const { error } = await supabase.from('current_pl_items').insert(allPlItemsToInsert);
     if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi lưu danh sách PL: ' + error.message });
+      const errorMsg = error.message === 'Failed to fetch' 
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi lưu danh sách PL: ' + errorMsg });
       return;
     }
 
@@ -1477,6 +1482,23 @@ export default function Outbound() {
                           );
                         })}
                       </tbody>
+                      {plItems.length > 0 && (
+                        <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
+                          <tr>
+                            <td colSpan={4} className="px-4 py-2 border border-slate-200 text-right text-[11px] uppercase tracking-wider">Tổng cộng:</td>
+                            <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-blue-700">
+                              {plItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
+                            </td>
+                            <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-blue-700">
+                              {plItems.reduce((sum, item) => {
+                                const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+                                return sum + scanCount;
+                              }, 0)}
+                            </td>
+                            <td colSpan={3} className="px-4 py-2 border border-slate-200"></td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Search, 
@@ -35,7 +35,12 @@ export default function Inventory() {
       .select('*')
       .order('last_updated', { ascending: false });
     
-    if (data) {
+    if (error) {
+      const errorMsg = error.message === 'Failed to fetch' 
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi tải tồn kho: ' + errorMsg });
+    } else if (data) {
       setInventory(data);
     }
     setLoading(false);
@@ -52,23 +57,28 @@ export default function Inventory() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedItems.size === inventory.length) {
+    if (selectedItems.size === filteredInventory.length && filteredInventory.length > 0) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(inventory.map(item => item.id)));
+      setSelectedItems(new Set(filteredInventory.map(item => item.so + '|' + item.rpro)));
     }
   };
 
-  const deleteItem = async (id: string) => {
+  const deleteGroup = async (ids: string[]) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa nhóm này (${ids.length} mục)?`)) return;
+    
     const { error } = await supabase
       .from('inventory_balances')
       .delete()
-      .eq('id', id);
+      .in('id', ids);
 
     if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+      const errorMsg = error.message === 'Failed to fetch' 
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + errorMsg });
     } else {
-      setMessage({ type: 'success', text: 'Đã xóa mục tồn kho thành công' });
+      setMessage({ type: 'success', text: 'Đã xóa nhóm tồn kho thành công' });
       fetchInventory();
     }
   };
@@ -78,15 +88,29 @@ export default function Inventory() {
 
     setLoading(true);
     try {
-      const selectedIds = Array.from(selectedItems);
+      const selectedGroupKeys = Array.from(selectedItems);
+      const idsToDelete: string[] = [];
+      
+      selectedGroupKeys.forEach(groupKey => {
+        const group = filteredInventory.find(g => (g.so + '|' + g.rpro) === groupKey);
+        if (group) {
+          idsToDelete.push(...group.ids);
+        }
+      });
+
       const { error } = await supabase
         .from('inventory_balances')
         .delete()
-        .in('id', selectedIds);
+        .in('id', idsToDelete);
         
-      if (error) throw error;
+      if (error) {
+        const errorMsg = error.message === 'Failed to fetch' 
+          ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+          : error.message;
+        throw new Error(errorMsg);
+      }
 
-      setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} mục tồn kho thành công.` });
+      setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} nhóm tồn kho thành công.` });
       setSelectedItems(new Set());
       fetchInventory();
     } catch (error: any) {
@@ -96,7 +120,7 @@ export default function Inventory() {
     }
   };
 
-  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExcel = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -117,6 +141,7 @@ export default function Inventory() {
           const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
           const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
           const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
+          const qrCodeFromExcel = row['QRCODE'] || row['qrcode'] || row['qr_code'];
           
           let quantity = 0;
           let totalBoxes = 0;
@@ -138,7 +163,7 @@ export default function Inventory() {
             location_path: location,
             quantity,
             total_boxes: totalBoxes,
-            qr_code: `${so}|${rpro}`,
+            qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
             last_updated: new Date().toISOString()
           };
         });
@@ -159,8 +184,38 @@ export default function Inventory() {
     }
   };
 
-  const filteredInventory = inventory.filter(item => 
-    (item.qr_code && item.qr_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+  const groupedInventory = useMemo(() => {
+    const groups: { [key: string]: any } = {};
+    
+    inventory.forEach(item => {
+      const key = `${item.so}|${item.rpro}`;
+      if (!groups[key]) {
+        groups[key] = {
+          ...item,
+          ids: [item.id],
+          quantity: item.quantity || 0,
+          total_boxes: item.total_boxes || 0,
+          locations: new Set([item.location_path]),
+          last_updated: item.last_updated
+        };
+      } else {
+        groups[key].ids.push(item.id);
+        groups[key].quantity += (item.quantity || 0);
+        groups[key].total_boxes += (item.total_boxes || 0);
+        if (item.location_path) groups[key].locations.add(item.location_path);
+        if (new Date(item.last_updated) > new Date(groups[key].last_updated)) {
+          groups[key].last_updated = item.last_updated;
+        }
+      }
+    });
+
+    return Object.values(groups).map(group => ({
+      ...group,
+      location_path: Array.from(group.locations).filter(Boolean).sort().join(', ')
+    }));
+  }, [inventory]);
+
+  const filteredInventory = groupedInventory.filter(item => 
     (item.rpro && item.rpro.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.so && item.so.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.kh && item.kh.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -284,12 +339,11 @@ export default function Inventory() {
                 <th className="px-2 py-3 border border-slate-300 text-center bg-[#002060]">
                   <input 
                     type="checkbox" 
-                    checked={selectedItems.size === inventory.length && inventory.length > 0}
+                    checked={selectedItems.size === filteredInventory.length && filteredInventory.length > 0}
                     onChange={toggleSelectAll}
                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                 </th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">QRCODE</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">RPRO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">KHÁCH HÀNG</th>
@@ -303,20 +357,20 @@ export default function Inventory() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center">
+                  <td colSpan={9} className="px-6 py-12 text-center">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center">
+                  <td colSpan={9} className="px-6 py-12 text-center">
                     <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                     <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
                   </td>
                 </tr>
               ) : (
                 filteredInventory.map((item: any) => {
-                  const itemKey = item.id;
+                  const itemKey = `${item.so}|${item.rpro}`;
                   return (
                     <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(itemKey) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
@@ -326,9 +380,6 @@ export default function Inventory() {
                           onChange={() => toggleSelectItem(itemKey)}
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
-                      </td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">
-                        {item.qr_code}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
@@ -348,7 +399,7 @@ export default function Inventory() {
                       </td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         <button 
-                          onClick={() => deleteItem(item.id)}
+                          onClick={() => deleteGroup(item.ids)}
                           className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -359,6 +410,18 @@ export default function Inventory() {
                 })
               )}
             </tbody>
+            {!loading && filteredInventory.length > 0 && (
+              <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-300">
+                <tr>
+                  <td className="px-2 py-3 border border-slate-300 text-center"></td>
+                  <td colSpan={4} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
+                  <td className="px-4 py-3 text-[11px] border border-slate-300 text-center text-blue-700">
+                    {filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0)} / {filteredInventory.reduce((sum, item) => sum + (item.total_boxes || 0), 0)}
+                  </td>
+                  <td colSpan={3} className="px-4 py-3 border border-slate-300"></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

@@ -18,8 +18,8 @@ export function formatDate(date: string | Date) {
 export function parseQRCode(qrData: string) {
   // Flexible formats: 
   // 1. SO-260202-0336|RPRO-260203-0325|1/9
-  // 2. SO-260202-0336|RPRO-260203-0325
-  // 3. SO-260202-0336|
+  // 2. SLT-260210-182|RPRO-260225-0740|3/5
+  // 3. CSUP-260210-182|RPRO-260225-0740
   
   try {
     if (qrData.startsWith('{')) {
@@ -27,18 +27,41 @@ export function parseQRCode(qrData: string) {
     }
 
     const parts = qrData.split('|').map(p => p.trim());
-    const so = parts[0] || '';
-    const rpro = parts[1] || '';
+    let so = '';
+    let rpro = '';
     let totalBoxes = 1;
 
-    // Check if the last part is a box indicator like "1/9"
-    if (parts.length >= 3) {
-      const lastPart = parts[parts.length - 1];
-      if (lastPart.includes('/')) {
-        const totalStr = lastPart.split('/')[1];
-        totalBoxes = parseInt(totalStr) || 1;
-      }
+    // Check for box indicator in any part
+    const boxIndicatorPart = parts.find(p => p.includes('/'));
+    if (boxIndicatorPart) {
+      const totalStr = boxIndicatorPart.split('/')[1];
+      totalBoxes = parseInt(totalStr) || 1;
     }
+
+    // Smart assignment based on prefixes
+    parts.forEach(part => {
+      if (part.includes('/')) return; // Skip box indicator part
+      if (!part) return;
+      
+      const upperPart = part.toUpperCase();
+      // Treat SO, SLT, CSUP as SO
+      if (upperPart.startsWith('SO-') || upperPart.startsWith('SLT-') || upperPart.startsWith('CSUP-')) {
+        so = part;
+      } else if (upperPart.startsWith('RPRO-')) {
+        rpro = part;
+      } else {
+        // Fallback for parts without known prefixes
+        if (!so && !rpro) {
+          // If first part and no SO/RPRO yet, assume it's SO if it doesn't look like RPRO
+          if (upperPart.startsWith('RPRO')) rpro = part;
+          else so = part;
+        } else if (so && !rpro) {
+          rpro = part;
+        } else if (!so && rpro) {
+          so = part;
+        }
+      }
+    });
 
     return {
       qrCode: qrData,

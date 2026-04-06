@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Search, 
   Filter, 
   Download, 
+  Upload,
   MapPin, 
   Package,
   ArrowUpDown,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { InventoryBalance } from '../types';
@@ -19,6 +21,7 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchInventory();
@@ -26,9 +29,9 @@ export default function Inventory() {
 
   async function fetchInventory() {
     setLoading(true);
-    // Fetch from the optimized database view
+    // Fetch all individual records from inventory_balances
     const { data, error } = await supabase
-      .from('inventory_by_rpro')
+      .from('inventory_balances')
       .select('*')
       .order('last_updated', { ascending: false });
     
@@ -52,25 +55,20 @@ export default function Inventory() {
     if (selectedItems.size === inventory.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(inventory.map(item => `${item.so}|${item.rpro}`)));
+      setSelectedItems(new Set(inventory.map(item => item.id)));
     }
   };
 
-  const deleteItem = async (so: string, rpro: string) => {
-    let query = supabase.from('inventory_balances').delete();
-    
-    if (so) query = query.eq('so', so);
-    else query = query.is('so', null);
-    
-    if (rpro) query = query.eq('rpro', rpro);
-    else query = query.is('rpro', null);
-
-    const { error } = await query;
+  const deleteItem = async (id: string) => {
+    const { error } = await supabase
+      .from('inventory_balances')
+      .delete()
+      .eq('id', id);
 
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
     } else {
-      setMessage({ type: 'success', text: `Đã xóa tồn kho cho SO: ${so}, RPRO: ${rpro}` });
+      setMessage({ type: 'success', text: 'Đã xóa mục tồn kho thành công' });
       fetchInventory();
     }
   };
@@ -80,19 +78,14 @@ export default function Inventory() {
 
     setLoading(true);
     try {
-      const selectedIds = Array.from(selectedItems) as string[];
-      for (const id of selectedIds) {
-        const [so, rpro] = id.split('|');
-        let query = supabase.from('inventory_balances').delete();
+      const selectedIds = Array.from(selectedItems);
+      const { error } = await supabase
+        .from('inventory_balances')
+        .delete()
+        .in('id', selectedIds);
         
-        if (so && so !== 'null') query = query.eq('so', so);
-        else query = query.is('so', null);
-        
-        if (rpro && rpro !== 'null') query = query.eq('rpro', rpro);
-        else query = query.is('rpro', null);
+      if (error) throw error;
 
-        await query;
-      }
       setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} mục tồn kho thành công.` });
       setSelectedItems(new Set());
       fetchInventory();
@@ -100,6 +93,69 @@ export default function Inventory() {
       setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+        const itemsToInsert = data.map(row => {
+          // Map headers: QRCODE, SO, RPRO, LOẠI THÙNG, SỐ THÙNG ĐƠN HÀNG, VỊ TRÍ, NGÀY NHẬP
+          const so = row['SO'] || row['so'] || '';
+          const rpro = row['RPRO'] || row['rpro'] || '';
+          const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
+          const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
+          const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
+          
+          let quantity = 0;
+          let totalBoxes = 0;
+          const qtyStr = String(row['SỐ THÙNG ĐƠN HÀNG'] || row['số thùng đơn hàng'] || row['items_count'] || '0');
+          if (qtyStr.includes('/')) {
+            const parts = qtyStr.split('/');
+            quantity = parseInt(parts[0].trim()) || 0;
+            totalBoxes = parseInt(parts[1].trim()) || 0;
+          } else {
+            quantity = parseInt(qtyStr) || 0;
+            totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
+          }
+
+          return {
+            so,
+            rpro,
+            kh,
+            box_type: boxType,
+            location_path: location,
+            quantity,
+            total_boxes: totalBoxes,
+            qr_code: `${so}|${rpro}`,
+            last_updated: new Date().toISOString()
+          };
+        });
+
+        if (itemsToInsert.length > 0) {
+          const { error } = await supabase.from('inventory_balances').insert(itemsToInsert);
+          if (error) throw error;
+          setMessage({ type: 'success', text: `Đã nhập ${itemsToInsert.length} mục tồn kho thành công.` });
+          fetchInventory();
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi nhập: ' + error.message });
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -112,20 +168,20 @@ export default function Inventory() {
 
   const exportToExcel = () => {
     const data = filteredInventory.map(item => ({
-      'RPRO': item.rpro,
+      'QRCODE': `${item.so}|${item.rpro}`,
       'SO': item.so,
-      'Khách hàng': item.kh,
-      'Tổng số lượng': item.total_quantity,
-      'Số kiện': item.items_count,
-      'Loại thùng (Mới nhất)': item.box_type,
-      'Vị trí (Mới nhất)': item.location_path,
-      'Cập nhật cuối': formatDate(item.last_updated)
+      'RPRO': item.rpro,
+      'KHÁCH HÀNG': item.kh,
+      'LOẠI THÙNG': item.box_type,
+      'SỐ THÙNG ĐƠN HÀNG': `${item.quantity} / ${item.total_boxes || '?'}`,
+      'VỊ TRÍ': item.location_path,
+      'NGÀY NHẬP': formatDate(item.last_updated)
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'TonKho');
-    XLSX.writeFile(wb, `TonKho_ChiTiet_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `TonKho_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -145,12 +201,44 @@ export default function Inventory() {
               Xóa đã chọn ({selectedItems.size})
             </button>
           )}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportExcel} 
+            className="hidden" 
+            accept=".xlsx, .xls"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-all"
+          >
+            <Upload className="w-4 h-4" />
+            Nhập Excel
+          </button>
           <button
             onClick={exportToExcel}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
           >
             <Download className="w-4 h-4" />
             Xuất Excel
+          </button>
+          <button
+            onClick={async () => {
+              if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ tồn kho?')) {
+                setLoading(true);
+                const { error } = await supabase.from('inventory_balances').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+                if (error) setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+                else {
+                  setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
+                  fetchInventory();
+                }
+                setLoading(false);
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700 transition-all"
+          >
+            <Trash2 className="w-4 h-4" />
+            Xóa tất cả
           </button>
         </div>
       </div>
@@ -189,11 +277,11 @@ export default function Inventory() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
           <table className="w-full text-left border-collapse border border-slate-200">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-[#002060] text-white">
-                <th className="px-2 py-3 border border-slate-300 text-center">
+                <th className="px-2 py-3 border border-slate-300 text-center bg-[#002060]">
                   <input 
                     type="checkbox" 
                     checked={selectedItems.size === inventory.length && inventory.length > 0}
@@ -201,32 +289,34 @@ export default function Inventory() {
                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                 </th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">QRCODE</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SO</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">RPRO</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">KHÁCH HÀNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">LOẠI THÙNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SỐ THÙNG ĐƠN HÀNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">VỊ TRÍ</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">NGÀY NHẬP</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">THAO TÁC</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center">
+                  <td colSpan={10} className="px-6 py-12 text-center">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center">
+                  <td colSpan={10} className="px-6 py-12 text-center">
                     <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                     <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
                   </td>
                 </tr>
               ) : (
                 filteredInventory.map((item: any) => {
-                  const itemKey = `${item.so}|${item.rpro}`;
+                  const itemKey = item.id;
                   return (
                     <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(itemKey) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
@@ -238,13 +328,14 @@ export default function Inventory() {
                         />
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">
-                        {item.so}|{item.rpro}
+                        {item.qr_code}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.kh}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
-                        {item.items_count} / {item.total_boxes || '?'}
+                        {item.quantity} / {item.total_boxes || '?'}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         <div className="flex items-center justify-center gap-1 text-blue-600 font-bold">
@@ -257,7 +348,7 @@ export default function Inventory() {
                       </td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         <button 
-                          onClick={() => deleteItem(item.so, item.rpro)}
+                          onClick={() => deleteItem(item.id)}
                           className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />

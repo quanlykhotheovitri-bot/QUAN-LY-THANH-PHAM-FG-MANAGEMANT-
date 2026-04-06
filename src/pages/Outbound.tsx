@@ -18,7 +18,8 @@ import {
   Download,
   Filter,
   ArrowUpDown,
-  Copy
+  Copy,
+  Printer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
@@ -77,15 +78,22 @@ export default function Outbound() {
       }
     });
 
-    const rproInv = new Map<string, any>();
-    const soInv = new Map<string, any>();
+    const rproInv = new Map<string, InventoryBalance>();
+    const soInv = new Map<string, InventoryBalance>();
+    const compositeInv = new Map<string, InventoryBalance>();
     
     inventoryBalances.forEach(inv => {
+      if (inv.quantity <= 0) return;
+      
       if (inv.rpro && !rproInv.has(inv.rpro)) rproInv.set(inv.rpro, inv);
       if (inv.so && !soInv.has(inv.so)) soInv.set(inv.so, inv);
+      if (inv.so && inv.rpro) {
+        const key = `${inv.so}|${inv.rpro}`;
+        if (!compositeInv.has(key)) compositeInv.set(key, inv);
+      }
     });
 
-    return { rproCounts, soCounts, rproInv, soInv };
+    return { rproCounts, soCounts, rproInv, soInv, compositeInv };
   }, [scannedItems, inventoryBalances]);
 
   const filteredOutbound = useMemo(() => {
@@ -141,7 +149,10 @@ export default function Outbound() {
   }
 
   async function fetchInventoryBalances() {
-    const { data } = await supabase.from('inventory_balances').select('*');
+    const { data } = await supabase
+      .from('inventory_balances')
+      .select('*')
+      .gt('quantity', 0);
     if (data) setInventoryBalances(data);
   }
 
@@ -847,7 +858,11 @@ export default function Outbound() {
         if (diff > 0) statusText = `Thiếu (${diff})`;
         else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
 
-        const invMatch = item.rpro ? plItemStats.rproInv.get(item.rpro) : plItemStats.soInv.get(item.so);
+        const invMatch = (item.so && item.rpro) 
+          ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
+          : item.rpro 
+            ? plItemStats.rproInv.get(item.rpro) 
+            : plItemStats.soInv.get(item.so);
 
         return {
           type: 'PL',
@@ -875,6 +890,131 @@ export default function Outbound() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePrintPL = () => {
+    if (plItems.length === 0) return;
+
+    // Group items by PL No
+    const plGroups = new Map<string, any[]>();
+    
+    plItems.forEach(item => {
+      const plNo = item.plNo || 'N/A';
+      if (!plGroups.has(plNo)) {
+        plGroups.set(plNo, []);
+      }
+      
+      const invMatch = (item.so && item.rpro) 
+        ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
+        : item.rpro 
+          ? plItemStats.rproInv.get(item.rpro) 
+          : plItemStats.soInv.get(item.so);
+      const location = invMatch ? invMatch.location_path : 'N/A';
+      const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+      
+      plGroups.get(plNo)?.push({
+        ...item,
+        location,
+        scanCount
+      });
+    });
+
+    // Convert to array of groups and sort each group by location
+    const sortedGroups = Array.from(plGroups.entries()).map(([plNo, items]) => {
+      return {
+        plNo,
+        items: items.sort((a, b) => a.location.localeCompare(b.location))
+      };
+    }).sort((a, b) => a.plNo.localeCompare(b.plNo));
+
+    // Create print window
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+      <html>
+        <head>
+          <title>In Danh Sách PL</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+            .pl-section { page-break-after: always; margin-bottom: 40px; }
+            .pl-section:last-child { page-break-after: auto; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; font-size: 11px; }
+            th { background-color: #f8f9fa; font-weight: bold; text-transform: uppercase; }
+            h2 { text-align: center; color: #002060; margin-bottom: 5px; }
+            .header-info { margin-bottom: 15px; font-size: 11px; color: #666; display: flex; justify-content: space-between; }
+            .footer { margin-top: 20px; font-size: 10px; text-align: right; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+            .location-tag { background-color: #fff9f0; font-weight: bold; }
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1cm; }
+              .pl-section { page-break-after: always; }
+            }
+          </style>
+        </head>
+        <body>
+          ${sortedGroups.map((group, gIdx) => `
+            <div class="pl-section">
+              <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
+              <div class="header-info">
+                <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
+                <span>Số dòng: ${group.items.length}</span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 30px; text-align: center;">STT</th>
+                    <th>PL No</th>
+                    <th style="white-space: nowrap;">OVN Order No</th>
+                    <th style="white-space: nowrap;">RPRO</th>
+                    <th>Khách Hàng</th>
+                    <th style="text-align: center;">Total Box</th>
+                    <th style="text-align: center;">Scan Xuất</th>
+                    <th>Location</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${group.items.map((item, index) => `
+                    <tr>
+                      <td style="text-align: center;">${index + 1}</td>
+                      <td style="font-weight: bold;">${item.plNo || 'N/A'}</td>
+                      <td style="font-weight: bold; white-space: nowrap;">${item.so || 'N/A'}</td>
+                      <td style="color: #e67e22; font-weight: bold; white-space: nowrap;">${item.rpro || ''}</td>
+                      <td style="font-size: 10px;">${item.kh || 'N/A'}</td>
+                      <td style="text-align: center; font-weight: bold;">${item.totalBoxes}</td>
+                      <td style="text-align: center; color: #3498db; font-weight: bold;">${item.scanCount}</td>
+                      <td class="location-tag">${item.location}</td>
+                      <td></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+                <tfoot>
+                  <tr style="background-color: #f8f9fa; font-weight: bold;">
+                    <td colspan="5" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
+                    <td style="text-align: center; font-size: 12px;">${group.items.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
+                    <td style="text-align: center; font-size: 12px; color: #3498db;">${group.items.reduce((sum, item) => sum + (item.scanCount || 0), 0)}</td>
+                    <td colspan="2"></td>
+                  </tr>
+                </tfoot>
+              </table>
+              <div class="footer">Hệ thống Quản lý Kho - Trang ${gIdx + 1}/${sortedGroups.length}</div>
+            </div>
+          `).join('')}
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.print();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   return (
@@ -1226,6 +1366,13 @@ export default function Outbound() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-400 mr-2">{plItems.length} dòng</span>
                       <button 
+                        onClick={handlePrintPL}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all"
+                      >
+                        <Printer className="w-3 h-3" />
+                        IN PL
+                      </button>
+                      <button 
                         onClick={handleSavePLToOutbound}
                         disabled={loading}
                         className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
@@ -1293,7 +1440,11 @@ export default function Outbound() {
                             statusColor = 'text-amber-600';
                           }
 
-                          const invMatch = item.rpro ? plItemStats.rproInv.get(item.rpro) : plItemStats.soInv.get(item.so);
+                          const invMatch = (item.so && item.rpro) 
+                            ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
+                            : item.rpro 
+                              ? plItemStats.rproInv.get(item.rpro) 
+                              : plItemStats.soInv.get(item.so);
                           const location = invMatch ? invMatch.location_path : 'N/A';
 
                           return (

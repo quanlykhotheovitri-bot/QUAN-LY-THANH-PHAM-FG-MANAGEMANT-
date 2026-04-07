@@ -79,15 +79,25 @@ export default function Dashboard() {
       const outTotalBoxes = outbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Inventory by Location
-      const { data: locData, error: locError } = await supabase
+      const { data: inventoryData, error: invDataError } = await supabase
         .from('inventory_balances')
-        .select('quantity, warehouse_locations(zone)');
+        .select('quantity, location_path');
       
-      if (locError) throw locError;
+      const { data: locations, error: locsError } = await supabase
+        .from('warehouse_locations')
+        .select('full_path, zone');
+
+      if (invDataError) throw invDataError;
+      if (locsError) throw locsError;
       
       const locMap: Record<string, number> = {};
-      locData?.forEach((item: any) => {
-        const zone = item.warehouse_locations?.zone || 'Unknown';
+      inventoryData?.forEach((item: any) => {
+        // Handle potential multiple locations separated by comma
+        const paths = (item.location_path || '').split(',').map((p: string) => p.trim());
+        const primaryPath = paths[0];
+        
+        const locMatch = locations?.find(l => l.full_path === primaryPath);
+        const zone = locMatch?.zone || 'Unknown';
         locMap[zone] = (locMap[zone] || 0) + item.quantity;
       });
       
@@ -113,13 +123,22 @@ export default function Dashboard() {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const { data: slowData, error: slowError } = await supabase
         .from('inventory_balances')
-        .select('*, warehouse_locations(full_path)')
+        .select('*')
         .lt('last_updated', thirtyDaysAgo.toISOString())
         .limit(5);
       
       if (slowError) throw slowError;
       
-      setSlowMoving(slowData || []);
+      // Map location full_path for slow moving items manually
+      const slowMovingWithLoc = slowData?.map(item => {
+        const paths = (item.location_path || '').split(',').map((p: string) => p.trim());
+        return {
+          ...item,
+          location_full_path: paths[0] || 'N/A'
+        };
+      });
+      
+      setSlowMoving(slowMovingWithLoc || []);
 
       setStats({
         totalInventory: { orders: invOrders.size, boxes: invTotalBoxes },
@@ -142,38 +161,48 @@ export default function Dashboard() {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-  const StatCard = ({ title, value, icon: Icon, color, trend, isDual }: any) => (
-    <motion.div 
-      whileHover={{ y: -5 }}
-      className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
-    >
-      <div className="flex items-center justify-between mb-4">
-        <div className={`p-3 rounded-xl ${color}`}>
-          <Icon className="w-6 h-6 text-white" />
+  const StatCard = ({ title, value, icon: Icon, color, trend, isDual }: any) => {
+    const getBgColor = () => {
+      if (color.includes('blue')) return 'bg-blue-50/50 border-blue-200';
+      if (color.includes('emerald')) return 'bg-emerald-50/50 border-emerald-200';
+      if (color.includes('orange')) return 'bg-orange-50/50 border-orange-200';
+      if (color.includes('rose')) return 'bg-rose-50/50 border-rose-200';
+      return 'bg-white border-slate-200';
+    };
+
+    return (
+      <motion.div 
+        whileHover={{ y: -5 }}
+        className={`p-6 rounded-2xl border-2 shadow-sm transition-all ${getBgColor()}`}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className={`p-3 rounded-xl shadow-sm ${color}`}>
+            <Icon className="w-6 h-6 text-white" />
+          </div>
+          {trend && (
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${trend > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+              {trend > 0 ? '+' : ''}{trend}%
+            </span>
+          )}
         </div>
-        {trend && (
-          <span className={`text-xs font-bold px-2 py-1 rounded-full ${trend > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-            {trend > 0 ? '+' : ''}{trend}%
-          </span>
+        <h3 className="text-slate-600 text-sm font-bold uppercase tracking-tight">{title}</h3>
+        {isDual ? (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-900 tracking-tighter">{value.orders.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-500 font-black uppercase">Đơn hàng</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-blue-600 tracking-tighter">{value.boxes.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-500 font-black uppercase">Tổng thùng</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-3xl font-black text-slate-900 mt-2 tracking-tighter">{value.toLocaleString()}</p>
         )}
-      </div>
-      <h3 className="text-slate-500 text-sm font-medium">{title}</h3>
-      {isDual ? (
-        <div className="mt-1 space-y-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">{value.orders.toLocaleString()}</span>
-            <span className="text-xs text-slate-400 font-medium">ĐƠN</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-blue-600">{value.boxes.toLocaleString()}</span>
-            <span className="text-xs text-slate-400 font-medium">THÙNG</span>
-          </div>
-        </div>
-      ) : (
-        <p className="text-2xl font-bold text-slate-900 mt-1">{value.toLocaleString()}</p>
-      )}
-    </motion.div>
-  );
+      </motion.div>
+    );
+  };
 
   if (loading) {
     return (
@@ -223,10 +252,10 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Inventory by Location */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-6">
+        <div className="bg-blue-50/20 p-6 rounded-2xl border-2 border-blue-500 shadow-sm">
+          <div className="flex items-center gap-2 mb-6 bg-blue-50/50 p-2 rounded-xl border border-blue-100">
             <MapPin className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-bold text-slate-900">Tồn kho theo Zone</h2>
+            <h2 className="text-lg font-bold text-blue-900 tracking-tight">Tồn kho theo Zone</h2>
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -245,10 +274,10 @@ export default function Dashboard() {
         </div>
 
         {/* Inventory by Customer */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-6">
-            <PieChartIcon className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-bold text-slate-900">Tồn theo khách hàng</h2>
+        <div className="bg-emerald-50/20 p-6 rounded-2xl border-2 border-emerald-500 shadow-sm">
+          <div className="flex items-center gap-2 mb-6 bg-emerald-50/50 p-2 rounded-xl border border-emerald-100">
+            <PieChartIcon className="w-5 h-5 text-emerald-600" />
+            <h2 className="text-lg font-bold text-emerald-900 tracking-tight">Tồn theo khách hàng</h2>
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -284,12 +313,12 @@ export default function Dashboard() {
       </div>
 
       {/* Slow Moving Items Table */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2 mb-6">
+      <div className="bg-rose-50/20 p-6 rounded-2xl border-2 border-rose-500 shadow-sm">
+        <div className="flex items-center gap-2 mb-6 bg-rose-50/50 p-2 rounded-xl border border-rose-100">
           <AlertTriangle className="w-5 h-5 text-rose-600" />
-          <h2 className="text-lg font-bold text-slate-900">Hàng chậm luân chuyển (Trên 30 ngày)</h2>
+          <h2 className="text-lg font-bold text-rose-900 tracking-tight">Hàng chậm luân chuyển (Trên 30 ngày)</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white rounded-xl border border-rose-100">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50">
@@ -312,7 +341,7 @@ export default function Dashboard() {
                   <tr key={item.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 text-xs font-mono text-slate-500">{item.qr_code}</td>
                     <td className="px-4 py-3 text-sm font-bold text-slate-900">{item.rpro || item.so}</td>
-                    <td className="px-4 py-3 text-xs text-blue-600 font-bold">{item.warehouse_locations?.full_path}</td>
+                    <td className="px-4 py-3 text-xs text-blue-600 font-bold">{item.location_full_path}</td>
                     <td className="px-4 py-3 text-sm text-center font-bold">{item.quantity}</td>
                     <td className="px-4 py-3 text-xs text-slate-400 text-right">{new Date(item.last_updated).toLocaleDateString('vi-VN')}</td>
                   </tr>

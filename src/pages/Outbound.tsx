@@ -1165,9 +1165,9 @@ export default function Outbound() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Configuration Section */}
             <div className="lg:col-span-1 space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="bg-orange-50/30 p-6 rounded-2xl border-2 border-orange-500 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-slate-900">Cấu hình quét</h2>
+                  <h2 className="text-lg font-bold text-orange-900">Cấu hình quét</h2>
                 </div>
                 <div className="space-y-4">
                   <div>
@@ -1208,9 +1208,9 @@ export default function Outbound() {
 
             {/* Scanned List Section */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">Danh sách chờ xuất</h2>
+              <div className="bg-white rounded-2xl border-2 border-orange-500 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-orange-50/50">
+                  <h2 className="text-lg font-bold text-orange-900">Danh sách chờ xuất</h2>
                   <div className="flex gap-4">
                     {scannedItems.length > 0 && (
                       <button
@@ -1634,7 +1634,10 @@ export default function Outbound() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border-2 border-orange-600 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-orange-50/50">
+              <h2 className="text-lg font-bold text-orange-900">Lịch sử xuất kho (DATA XUẤT KHO)</h2>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse border border-slate-200">
                 <thead>

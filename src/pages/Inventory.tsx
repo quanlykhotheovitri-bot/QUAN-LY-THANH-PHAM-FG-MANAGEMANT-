@@ -320,7 +320,7 @@ export default function Inventory() {
         </div>
       )}
 
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
+      <div className="bg-emerald-50/30 p-4 rounded-2xl border-2 border-emerald-500 shadow-sm flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
           <input
@@ -328,7 +328,7 @@ export default function Inventory() {
             placeholder="Tìm kiếm theo QR, SO, RPRO, Khách hàng..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
           />
         </div>
         <div className="flex gap-2">
@@ -343,7 +343,10 @@ export default function Inventory() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border-2 border-emerald-500 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 bg-emerald-50/50">
+          <h2 className="text-lg font-bold text-emerald-900">Danh sách tồn kho chi tiết</h2>
+        </div>
         <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
           <table className="w-full text-left border-collapse border border-slate-200">
             <thead className="sticky top-0 z-10">

@@ -417,9 +417,9 @@ export default function Inbound() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Manual Input & Settings */}
             <div className="lg:col-span-1 space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="bg-blue-50/30 p-6 rounded-2xl border-2 border-blue-500 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-slate-900">Cấu hình quét</h2>
+                  <h2 className="text-lg font-bold text-blue-900">Cấu hình quét</h2>
                   <div className="flex items-center gap-2">
                     <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded-lg ${
                       matchedLocation 
@@ -509,9 +509,9 @@ export default function Inbound() {
 
             {/* Scanned List */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">Danh sách chờ nhập</h2>
+              <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+                  <h2 className="text-lg font-bold text-blue-900">Danh sách chờ nhập</h2>
                   <div className="flex items-center gap-2">
                     {selectedScanned.size > 0 && (
                       <button
@@ -621,10 +621,10 @@ export default function Inbound() {
           </div>
         </>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="bg-white rounded-2xl border-2 border-blue-600 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
             <div className="flex items-center gap-4">
-              <h2 className="text-lg font-bold text-slate-900">Lịch sử nhập kho (DATA NHẬP KHO)</h2>
+              <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho (DATA NHẬP KHO)</h2>
               {selectedHistory.size > 0 && (
                 <button
                   onClick={deleteSelectedHistory}

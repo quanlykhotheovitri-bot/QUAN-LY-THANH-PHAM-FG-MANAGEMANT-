@@ -163,17 +163,17 @@ export default function Dashboard() {
 
   const StatCard = ({ title, value, icon: Icon, color, trend, isDual }: any) => {
     const getBgColor = () => {
-      if (color.includes('blue')) return 'bg-blue-50/50 border-blue-200';
-      if (color.includes('emerald')) return 'bg-emerald-50/50 border-emerald-200';
-      if (color.includes('orange')) return 'bg-orange-50/50 border-orange-200';
-      if (color.includes('rose')) return 'bg-rose-50/50 border-rose-200';
-      return 'bg-white border-slate-200';
+      if (color.includes('blue')) return 'bg-blue-50 border-blue-400';
+      if (color.includes('emerald')) return 'bg-emerald-50 border-emerald-400';
+      if (color.includes('orange')) return 'bg-orange-50 border-orange-400';
+      if (color.includes('rose')) return 'bg-rose-50 border-rose-400';
+      return 'bg-white border-slate-300';
     };
 
     return (
       <motion.div 
-        whileHover={{ y: -5 }}
-        className={`p-6 rounded-2xl border-2 shadow-sm transition-all ${getBgColor()}`}
+        whileHover={{ y: -5, scale: 1.02 }}
+        className={`p-6 rounded-2xl border-2 shadow-md transition-all ${getBgColor()}`}
       >
         <div className="flex items-center justify-between mb-4">
           <div className={`p-3 rounded-xl shadow-sm ${color}`}>
@@ -252,10 +252,10 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Inventory by Location */}
-        <div className="bg-blue-50/20 p-6 rounded-2xl border-2 border-blue-500 shadow-sm">
-          <div className="flex items-center gap-2 mb-6 bg-blue-50/50 p-2 rounded-xl border border-blue-100">
-            <MapPin className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-bold text-blue-900 tracking-tight">Tồn kho theo Zone</h2>
+        <div className="bg-white p-6 rounded-2xl border-2 border-blue-500 shadow-lg">
+          <div className="flex items-center gap-2 mb-6 bg-blue-600 p-3 rounded-xl shadow-md">
+            <MapPin className="w-5 h-5 text-white" />
+            <h2 className="text-lg font-bold text-white tracking-tight">Tồn kho theo Zone</h2>
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -274,10 +274,10 @@ export default function Dashboard() {
         </div>
 
         {/* Inventory by Customer */}
-        <div className="bg-emerald-50/20 p-6 rounded-2xl border-2 border-emerald-500 shadow-sm">
-          <div className="flex items-center gap-2 mb-6 bg-emerald-50/50 p-2 rounded-xl border border-emerald-100">
-            <PieChartIcon className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-lg font-bold text-emerald-900 tracking-tight">Tồn theo khách hàng</h2>
+        <div className="bg-white p-6 rounded-2xl border-2 border-emerald-500 shadow-lg">
+          <div className="flex items-center gap-2 mb-6 bg-emerald-600 p-3 rounded-xl shadow-md">
+            <PieChartIcon className="w-5 h-5 text-white" />
+            <h2 className="text-lg font-bold text-white tracking-tight">Tồn theo khách hàng</h2>
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -313,12 +313,12 @@ export default function Dashboard() {
       </div>
 
       {/* Slow Moving Items Table */}
-      <div className="bg-rose-50/20 p-6 rounded-2xl border-2 border-rose-500 shadow-sm">
-        <div className="flex items-center gap-2 mb-6 bg-rose-50/50 p-2 rounded-xl border border-rose-100">
-          <AlertTriangle className="w-5 h-5 text-rose-600" />
-          <h2 className="text-lg font-bold text-rose-900 tracking-tight">Hàng chậm luân chuyển (Trên 30 ngày)</h2>
+      <div className="bg-white p-6 rounded-2xl border-2 border-rose-500 shadow-lg">
+        <div className="flex items-center gap-2 mb-6 bg-rose-600 p-3 rounded-xl shadow-md">
+          <AlertTriangle className="w-5 h-5 text-white" />
+          <h2 className="text-lg font-bold text-white tracking-tight">Hàng chậm luân chuyển (Trên 30 ngày)</h2>
         </div>
-        <div className="overflow-x-auto bg-white rounded-xl border border-rose-100">
+        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50">

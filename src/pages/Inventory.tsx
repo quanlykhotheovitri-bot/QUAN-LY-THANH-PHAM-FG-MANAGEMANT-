@@ -247,18 +247,21 @@ export default function Inventory() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Quản lý tồn kho</h1>
-          <p className="text-slate-500">Chi tiết tồn kho theo từng vị trí</p>
+        <div className="flex items-center gap-3 bg-blue-600 p-3 rounded-xl shadow-md">
+          <Package className="w-6 h-6 text-white" />
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight leading-none">Quản lý tồn kho</h1>
+            <p className="text-blue-100 text-[10px] uppercase font-bold tracking-widest mt-1">Chi tiết tồn kho theo từng vị trí</p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           {selectedItems.size > 0 && (
             <button
               onClick={deleteSelected}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border-2 border-rose-200 rounded-xl text-sm font-black hover:bg-rose-100 transition-all shadow-md"
             >
               <Trash2 className="w-4 h-4" />
-              Xóa đã chọn ({selectedItems.size})
+              XÓA ĐÃ CHỌN ({selectedItems.size})
             </button>
           )}
           <input 
@@ -270,83 +273,40 @@ export default function Inventory() {
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-all"
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"
           >
-            <Upload className="w-4 h-4" />
-            Nhập Excel
+            <Upload className="w-5 h-5" />
+            NHẬP EXCEL
           </button>
           <button
             onClick={() => exportData('xlsx')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
+            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
           >
-            <Download className="w-4 h-4 text-blue-600" />
-            Xuất Excel
-          </button>
-          <button
-            onClick={() => exportData('csv')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            Xuất CSV
-          </button>
-          <button
-            onClick={async () => {
-              if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ tồn kho?')) {
-                setLoading(true);
-                const { error } = await supabase.from('inventory_balances').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-                if (error) setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
-                else {
-                  setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
-                  fetchInventory();
-                }
-                setLoading(false);
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700 transition-all"
-          >
-            <Trash2 className="w-4 h-4" />
-            Xóa tất cả
+            <Download className="w-5 h-5" />
+            XUẤT EXCEL
           </button>
         </div>
       </div>
 
-      {message && (
-        <div className={`p-4 rounded-xl flex items-center gap-3 ${
-          message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
-        }`}>
-          <Package className="w-5 h-5" />
-          <p className="text-sm font-medium">{message.text}</p>
-          <button onClick={() => setMessage(null)} className="ml-auto text-xs font-bold uppercase">Đóng</button>
+      <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 min-w-[300px]">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm kiếm SO, RPRO, Khách hàng..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl font-black focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+              />
+            </div>
+          </div>
+          <div className="text-sm font-black text-slate-500 uppercase tracking-widest">
+            Tổng cộng: <span className="text-blue-600">{filteredInventory.length}</span> nhóm hàng
+          </div>
         </div>
-      )}
 
-      <div className="bg-emerald-50/30 p-4 rounded-2xl border-2 border-emerald-500 shadow-sm flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Tìm kiếm theo QR, SO, RPRO, Khách hàng..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
-          />
-        </div>
-        <div className="flex gap-2">
-          <button className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium">
-            <Filter className="w-4 h-4" />
-            Lọc
-          </button>
-          <button className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium">
-            <ArrowUpDown className="w-4 h-4" />
-            Sắp xếp
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border-2 border-emerald-500 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-emerald-50/50">
-          <h2 className="text-lg font-bold text-emerald-900">Danh sách tồn kho chi tiết</h2>
-        </div>
         <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
           <table className="w-full text-left border-collapse border border-slate-200">
             <thead className="sticky top-0 z-10">

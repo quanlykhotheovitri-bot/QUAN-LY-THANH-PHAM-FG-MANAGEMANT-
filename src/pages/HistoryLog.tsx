@@ -169,70 +169,82 @@ export default function HistoryLog() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Lịch sử & Dữ liệu</h1>
-          <p className="text-slate-500">Truy vết mọi biến động và dữ liệu nhập kho</p>
-        </div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 w-fit">
-          <button
-            onClick={() => setActiveView('movements')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeView === 'movements' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            Biến động kho
-          </button>
-          <button
-            onClick={() => setActiveView('inbound')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeView === 'inbound' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            Data nhập kho
-          </button>
+    <div className="space-y-8">
+      <div className="bg-white p-6 rounded-2xl border-2 border-blue-500 shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-3 bg-blue-600 p-3 rounded-xl shadow-md">
+            <History className="w-6 h-6 text-white" />
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight leading-none">Lịch sử & Dữ liệu</h1>
+              <p className="text-blue-100 text-[10px] uppercase font-bold tracking-widest mt-1">Truy vết mọi biến động và dữ liệu nhập kho</p>
+            </div>
+          </div>
+          <div className="flex bg-slate-100 p-1.5 rounded-xl border-2 border-slate-200 w-fit shadow-inner">
+            <button
+              onClick={() => setActiveView('movements')}
+              className={`px-6 py-2.5 rounded-lg text-sm font-black transition-all ${
+                activeView === 'movements'
+                  ? 'bg-white text-blue-600 shadow-md scale-105'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              BIẾN ĐỘNG KHO
+            </button>
+            <button
+              onClick={() => setActiveView('inbound')}
+              className={`px-6 py-2.5 rounded-lg text-sm font-black transition-all ${
+                activeView === 'inbound'
+                  ? 'bg-white text-blue-600 shadow-md scale-105'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              DỮ LIỆU NHẬP
+            </button>
+          </div>
         </div>
       </div>
 
       {message && (
-        <div className={`p-4 rounded-xl flex items-center gap-3 ${
-          message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+        <div className={`p-4 rounded-xl flex items-center gap-3 shadow-lg border-2 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
         }`}>
           <History className="w-5 h-5" />
-          <p className="text-sm font-medium">{message.text}</p>
-          <button onClick={() => setMessage(null)} className="ml-auto text-xs font-bold uppercase">Đóng</button>
+          <p className="text-sm font-black uppercase tracking-wider">{message.text}</p>
+          <button onClick={() => setMessage(null)} className="ml-auto text-xs font-black bg-white px-3 py-1 rounded-lg shadow-sm border border-slate-200">ĐÓNG</button>
         </div>
       )}
 
       {activeView === 'movements' ? (
-        <div className="space-y-4">
-          <div className="flex gap-2 overflow-x-auto pb-2 items-center justify-between">
+        <div className="space-y-6">
+          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-3 items-center justify-between">
             <div className="flex gap-2">
               {['ALL', 'INBOUND', 'OUTBOUND', 'TRANSFER'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                    filter === f ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                  className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all border-2 ${
+                    filter === f ? 'bg-blue-600 text-white border-blue-600 shadow-lg' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  {f === 'ALL' ? 'Tất cả' : f}
+                  {f === 'ALL' ? 'TẤT CẢ' : f}
                 </button>
               ))}
             </div>
             {selectedLogs.size > 0 && (
               <button
                 onClick={deleteSelectedLogs}
-                className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Xóa đã chọn ({selectedLogs.size})
+                <Trash2 className="w-4 h-4" />
+                XÓA ĐÃ CHỌN ({selectedLogs.size})
               </button>
             )}
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+            <div className="bg-slate-50 p-4 border-b-2 border-slate-200">
+              <h2 className="text-sm font-black text-slate-600 uppercase tracking-widest">Danh sách biến động kho</h2>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -324,20 +336,28 @@ export default function HistoryLog() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-900">Danh sách dữ liệu nhập kho</h2>
+        <div className="space-y-6">
+          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-3 items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-slate-400" />
+              <span className="text-sm font-black text-slate-600 uppercase tracking-wider">Thao tác dữ liệu</span>
+            </div>
             {selectedInbound.size > 0 && (
               <button
                 onClick={deleteSelectedInbound}
-                className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Xóa đã chọn ({selectedInbound.size})
+                <Trash2 className="w-4 h-4" />
+                XÓA ĐÃ CHỌN ({selectedInbound.size})
               </button>
             )}
           </div>
-          <div className="overflow-x-auto">
+
+          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+            <div className="bg-slate-50 p-4 border-b-2 border-slate-200">
+              <h2 className="text-sm font-black text-slate-600 uppercase tracking-widest">Danh sách dữ liệu nhập kho</h2>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50">
@@ -420,9 +440,10 @@ export default function HistoryLog() {
             </table>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 }
 
 function ArrowRightIcon() {

@@ -39,7 +39,7 @@ export interface SourceImportLine {
   default_location: string;
 }
 
-export type UserRole = 'admin' | 'manager' | 'staff';
+export type UserRole = 'admin' | 'user';
 
 export interface UserProfile {
   id: string;

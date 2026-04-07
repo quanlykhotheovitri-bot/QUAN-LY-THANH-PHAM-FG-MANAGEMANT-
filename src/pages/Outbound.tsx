@@ -19,14 +19,17 @@ import {
   Filter,
   ArrowUpDown,
   Copy,
-  Printer
+  Printer,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Outbound() {
+  const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [selectedScanned, setSelectedScanned] = useState<Set<number>>(new Set());
@@ -1098,24 +1101,28 @@ export default function Outbound() {
           <Scan className="w-4 h-4" />
           Scan xuất
         </button>
-        <button
-          onClick={() => setActiveTab('pl')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-            activeTab === 'pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          PL (Packing List)
-        </button>
-        <button
-          onClick={() => setActiveTab('data')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-            activeTab === 'data' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          Data xuất
-        </button>
+        {authUser?.role === 'admin' && (
+          <>
+            <button
+              onClick={() => setActiveTab('pl')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              PL (Packing List)
+            </button>
+            <button
+              onClick={() => setActiveTab('data')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'data' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              Data xuất
+            </button>
+          </>
+        )}
       </div>
 
       {message && (
@@ -1165,24 +1172,25 @@ export default function Outbound() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Configuration Section */}
             <div className="lg:col-span-1 space-y-6">
-              <div className="bg-orange-50/30 p-6 rounded-2xl border-2 border-orange-500 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-orange-900">Cấu hình quét</h2>
+              <div className="bg-white p-6 rounded-2xl border-2 border-orange-500 shadow-lg">
+                <div className="flex items-center gap-2 mb-6 bg-orange-600 p-3 rounded-xl shadow-md">
+                  <Settings className="w-5 h-5 text-white" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">Cấu hình quét</h2>
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Dán mã QR (Thủ công)</label>
+                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wider ml-1 mb-2">Dán mã QR (Thủ công)</label>
                     <textarea
                       value={manualQR}
                       onChange={(e) => setManualQR(e.target.value)}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none h-32"
+                      className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-black focus:border-orange-400 focus:ring-4 focus:ring-orange-100 outline-none h-32 transition-all"
                       placeholder="Dán dữ liệu QR tại đây... (Mỗi dòng 1 mã)"
                     />
                     <button
                       onClick={handleProcessManual}
-                      className="w-full mt-2 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm"
+                      className="w-full mt-4 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-black transition-all shadow-lg active:scale-95"
                     >
-                      Xử lý mã
+                      XỬ LÝ MÃ
                     </button>
                   </div>
                 </div>
@@ -1208,9 +1216,9 @@ export default function Outbound() {
 
             {/* Scanned List Section */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl border-2 border-orange-500 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-orange-50/50">
-                  <h2 className="text-lg font-bold text-orange-900">Danh sách chờ xuất</h2>
+              <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-blue-100 flex items-center justify-between bg-blue-600 shadow-md">
+                  <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({scannedItems.length})</h2>
                   <div className="flex gap-4">
                     {scannedItems.length > 0 && (
                       <button

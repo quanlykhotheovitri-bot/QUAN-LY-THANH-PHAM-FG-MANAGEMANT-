@@ -1,7 +1,26 @@
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MainLayout from './pages/MainLayout';
+import Login from './pages/Login';
 import { isSupabaseConfigured } from './lib/supabase';
 import { AlertTriangle } from 'lucide-react';
+
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return <MainLayout />;
+}
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -27,7 +46,7 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <MainLayout />
+      <AppContent />
     </AuthProvider>
   );
 }

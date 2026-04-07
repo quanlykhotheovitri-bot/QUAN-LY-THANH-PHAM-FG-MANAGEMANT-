@@ -1,27 +1,59 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { UserRole } from '../types';
 
+interface User {
+  username: string;
+  role: UserRole;
+}
+
 interface AuthContextType {
-  user: { id: string; email: string } | null;
-  role: UserRole | null;
+  user: User | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  signIn: (username: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  // Mocking a logged in admin user
-  const [user] = useState({ id: 'admin-id', email: 'admin@warehouse.com' });
-  const [role] = useState<UserRole>('admin');
-  const [loading] = useState(false);
+const VALID_USERS = [
+  { username: 'admin', pass: '123456789@', role: 'admin' as UserRole },
+  ...Array.from({ length: 16 }, (_, i) => ({
+    username: `user${i + 1}`,
+    pass: '123456789@',
+    role: 'user' as UserRole
+  }))
+];
 
-  const signOut = async () => {
-    console.log('Sign out clicked (mock)');
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('fg_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [loading, setLoading] = useState(false);
+
+  const signIn = async (username: string, pass: string) => {
+    setLoading(true);
+    try {
+      const found = VALID_USERS.find(u => u.username === username && u.pass === pass);
+      if (found) {
+        const userData = { username: found.username, role: found.role };
+        setUser(userData);
+        localStorage.setItem('fg_user', JSON.stringify(userData));
+        return { success: true };
+      }
+      return { success: false, error: 'Sai tên đăng nhập hoặc mật khẩu' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signOut = () => {
+    setUser(null);
+    localStorage.removeItem('fg_user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

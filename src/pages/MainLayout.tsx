@@ -27,21 +27,31 @@ import InventoryCheck from './InventoryCheck';
 type Tab = 'dashboard' | 'inbound' | 'outbound' | 'inventory' | 'transfer' | 'check' | 'history' | 'settings';
 
 export default function MainLayout() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const { user, signOut } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'admin' ? 'dashboard' : 'inbound');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'inbound', label: 'Nhập kho', icon: PackagePlus },
-    { id: 'outbound', label: 'Xuất kho', icon: PackageMinus },
-    { id: 'transfer', label: 'Chuyển vị trí', icon: ArrowLeftRight },
-    { id: 'check', label: 'Kiểm kê', icon: ClipboardList },
-    { id: 'inventory', label: 'Tồn kho', icon: PackageSearch },
-    { id: 'history', label: 'Lịch sử', icon: History },
-    { id: 'settings', label: 'Cài đặt', icon: Settings },
+  const allMenuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
+    { id: 'inbound', label: 'Nhập kho', icon: PackagePlus, roles: ['admin', 'user'] },
+    { id: 'outbound', label: 'Xuất kho', icon: PackageMinus, roles: ['admin', 'user'] },
+    { id: 'transfer', label: 'Chuyển vị trí', icon: ArrowLeftRight, roles: ['admin'] },
+    { id: 'check', label: 'Kiểm kê', icon: ClipboardList, roles: ['admin'] },
+    { id: 'inventory', label: 'Tồn kho', icon: PackageSearch, roles: ['admin'] },
+    { id: 'history', label: 'Lịch sử', icon: History, roles: ['admin'] },
+    { id: 'settings', label: 'Cài đặt', icon: Settings, roles: ['admin'] },
   ];
 
+  const menuItems = allMenuItems.filter(item => item.roles.includes(user?.role || ''));
+
   const renderContent = () => {
+    const currentItem = allMenuItems.find(item => item.id === activeTab);
+    const hasAccess = currentItem?.roles.includes(user?.role || '');
+
+    if (!hasAccess) {
+      return user?.role === 'admin' ? <Dashboard /> : <Inbound />;
+    }
+
     switch (activeTab) {
       case 'dashboard': return <Dashboard />;
       case 'inbound': return <Inbound />;
@@ -51,7 +61,7 @@ export default function MainLayout() {
       case 'check': return <InventoryCheck />;
       case 'history': return <HistoryLog />;
       case 'settings': return <SettingsPage />;
-      default: return <Dashboard />;
+      default: return user?.role === 'admin' ? <Dashboard /> : <Inbound />;
     }
   };
 
@@ -65,9 +75,14 @@ export default function MainLayout() {
           </div>
           <span className="font-bold text-slate-900">FG Management</span>
         </div>
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-600">
-          {isSidebarOpen ? <X /> : <Menu />}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-600 uppercase">{user?.username.slice(0, 2)}</span>
+          </div>
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-600">
+            {isSidebarOpen ? <X /> : <Menu />}
+          </button>
+        </div>
       </div>
 
       {/* Sidebar */}
@@ -117,9 +132,34 @@ export default function MainLayout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto max-h-screen">
-        <div className="max-w-7xl mx-auto">
-          {renderContent()}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Desktop Header */}
+        <header className="hidden md:flex bg-white border-b border-slate-200 h-16 items-center justify-end px-8 sticky top-0 z-30">
+          <div className="flex items-center gap-4 bg-white p-2 pr-5 rounded-xl border-2 border-blue-500 shadow-lg hover:shadow-xl transition-all">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white text-sm font-black shadow-md">
+              {user?.username.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-black text-slate-900 leading-none">{user?.username}</span>
+              <span className="text-[10px] text-blue-600 uppercase font-black tracking-wider mt-1">
+                {user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
+              </span>
+            </div>
+            <div className="w-px h-6 bg-slate-200 mx-2" />
+            <button 
+              onClick={signOut}
+              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+              title="Đăng xuất"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-7xl mx-auto">
+            {renderContent()}
+          </div>
         </div>
       </main>
     </div>

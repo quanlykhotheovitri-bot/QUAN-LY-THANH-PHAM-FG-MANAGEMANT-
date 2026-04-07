@@ -13,14 +13,18 @@ import {
   User,
   Hash,
   Download,
-  Upload
+  Upload,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, SourceImportLine } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
 
+import { useAuth } from '../contexts/AuthContext';
+
 export default function Inbound() {
+  const { user: authUser } = useAuth();
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [selectedScanned, setSelectedScanned] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
@@ -348,12 +352,14 @@ export default function Inbound() {
           >
             Nhập kho hàng hóa
           </button>
-          <button 
-            onClick={() => setActiveTab('history')}
-            className={`text-2xl font-bold transition-all ${activeTab === 'history' ? 'text-slate-900 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            DATA NHẬP KHO
-          </button>
+          {authUser?.role === 'admin' && (
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`text-2xl font-bold transition-all ${activeTab === 'history' ? 'text-slate-900 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              DATA NHẬP KHO
+            </button>
+          )}
         </div>
         {activeTab === 'scan' && (
           <div className="flex flex-wrap gap-2">
@@ -417,32 +423,10 @@ export default function Inbound() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Manual Input & Settings */}
             <div className="lg:col-span-1 space-y-6">
-              <div className="bg-blue-50/30 p-6 rounded-2xl border-2 border-blue-500 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-blue-900">Cấu hình quét</h2>
-                  <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded-lg ${
-                      matchedLocation 
-                        ? 'text-emerald-600 bg-emerald-50' 
-                        : locationInput 
-                          ? 'text-blue-600 bg-blue-50' 
-                          : 'text-slate-400 bg-slate-50'
-                    }`}>
-                      <MapPin className="w-3 h-3" />
-                      {matchedLocation 
-                        ? `Vị trí: ${matchedLocation.full_path}` 
-                        : locationInput 
-                          ? 'Vị trí mới' 
-                          : 'Chưa chọn vị trí'}
-                    </div>
-                    <button 
-                      onClick={fetchLocations}
-                      className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                      title="Làm mới danh mục vị trí"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              <div className="bg-white p-6 rounded-2xl border-2 border-blue-500 shadow-lg">
+                <div className="flex items-center gap-2 mb-6 bg-blue-600 p-3 rounded-xl shadow-md">
+                  <Settings className="w-5 h-5 text-white" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">Cấu hình quét</h2>
                 </div>
                 <div className="space-y-4">
                   <div>
@@ -509,24 +493,24 @@ export default function Inbound() {
 
             {/* Scanned List */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-                  <h2 className="text-lg font-bold text-blue-900">Danh sách chờ nhập</h2>
+              <div className="bg-white rounded-2xl border-2 border-emerald-500 shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-emerald-100 flex items-center justify-between bg-emerald-600 shadow-md">
+                  <h2 className="text-lg font-bold text-white">Danh sách chờ nhập ({scannedItems.length})</h2>
                   <div className="flex items-center gap-2">
                     {selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white/20 text-white rounded-lg text-xs font-black hover:bg-white/30 transition-all"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        Xóa đã chọn ({selectedScanned.size})
+                        XÓA ĐÃ CHỌN ({selectedScanned.size})
                       </button>
                     )}
                     {scannedItems.length > 0 && (
                       <button
                         onClick={handleConfirmInbound}
                         disabled={loading}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-emerald-600 rounded-xl text-sm font-black hover:bg-emerald-50 transition-all disabled:opacity-50 shadow-md"
                       >
                         <Save className="w-4 h-4" />
                         LƯU VÀO KHO
@@ -534,8 +518,8 @@ export default function Inbound() {
                     )}
                     <button 
                       onClick={() => setScannedItems([])}
-                      className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
-                      title="Xóa danh sách"
+                      className="p-2 text-white/70 hover:text-white transition-colors"
+                      title="Xóa tất cả"
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>

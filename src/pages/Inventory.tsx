@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   Search, 
   Filter, 
@@ -16,6 +17,8 @@ import { InventoryBalance } from '../types';
 import { formatDate } from '../lib/utils';
 
 export default function Inventory() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [inventory, setInventory] = useState<InventoryBalance[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -254,16 +257,16 @@ export default function Inventory() {
             <p className="text-blue-100 text-[10px] uppercase font-bold tracking-widest mt-1">Chi tiết tồn kho theo từng vị trí</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          {selectedItems.size > 0 && (
-            <button
-              onClick={deleteSelected}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border-2 border-rose-200 rounded-xl text-sm font-black hover:bg-rose-100 transition-all shadow-md"
-            >
-              <Trash2 className="w-4 h-4" />
-              XÓA ĐÃ CHỌN ({selectedItems.size})
-            </button>
-          )}
+          <div className="flex flex-wrap gap-3">
+            {isAdmin && selectedItems.size > 0 && (
+              <button
+                onClick={deleteSelected}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border-2 border-rose-200 rounded-xl text-sm font-black hover:bg-rose-100 transition-all shadow-md"
+              >
+                <Trash2 className="w-4 h-4" />
+                XÓA ĐÃ CHỌN ({selectedItems.size})
+              </button>
+            )}
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -312,12 +315,14 @@ export default function Inventory() {
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#002060] text-white">
                 <th className="px-2 py-3 border border-slate-300 text-center bg-[#002060]">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedItems.size === filteredInventory.length && filteredInventory.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
+                  {isAdmin && (
+                    <input 
+                      type="checkbox" 
+                      checked={selectedItems.size === filteredInventory.length && filteredInventory.length > 0}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  )}
                 </th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">RPRO</th>
@@ -349,12 +354,14 @@ export default function Inventory() {
                   return (
                     <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(itemKey) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedItems.has(itemKey)}
-                          onChange={() => toggleSelectItem(itemKey)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
+                        {isAdmin && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedItems.has(itemKey)}
+                            onChange={() => toggleSelectItem(itemKey)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
@@ -373,12 +380,14 @@ export default function Inventory() {
                         {formatDate(item.last_updated)}
                       </td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
-                        <button 
-                          onClick={() => deleteGroup(item.ids)}
-                          className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button 
+                            onClick={() => deleteGroup(item.ids)}
+                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

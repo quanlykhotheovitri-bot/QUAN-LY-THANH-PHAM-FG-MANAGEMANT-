@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   History, 
   Search, 
@@ -14,6 +15,8 @@ import {
 import { formatDate } from '../lib/utils';
 
 export default function HistoryLog() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [logs, setLogs] = useState<any[]>([]);
   const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
   const [inboundData, setInboundData] = useState<any[]>([]);
@@ -230,7 +233,7 @@ export default function HistoryLog() {
                 </button>
               ))}
             </div>
-            {selectedLogs.size > 0 && (
+            {isAdmin && selectedLogs.size > 0 && (
               <button
                 onClick={deleteSelectedLogs}
                 className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
@@ -250,12 +253,14 @@ export default function HistoryLog() {
                 <thead>
                   <tr className="bg-slate-50">
                     <th className="px-4 py-4 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedLogs.size === logs.length && logs.length > 0}
-                        onChange={toggleSelectAllLogs}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
+                      {isAdmin && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedLogs.size === logs.length && logs.length > 0}
+                          onChange={toggleSelectAllLogs}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
                     </th>
                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Thời gian</th>
                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Loại</th>
@@ -282,12 +287,14 @@ export default function HistoryLog() {
                     logs.map((log) => (
                       <tr key={log.id} className={`hover:bg-slate-50 transition-colors ${selectedLogs.has(log.id) ? 'bg-blue-50' : ''}`}>
                         <td className="px-4 py-4 text-center">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedLogs.has(log.id)}
-                            onChange={() => toggleSelectLog(log.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
+                          {isAdmin && (
+                            <input 
+                              type="checkbox" 
+                              checked={selectedLogs.has(log.id)}
+                              onChange={() => toggleSelectLog(log.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -320,12 +327,14 @@ export default function HistoryLog() {
                           <span className="text-xs text-slate-500 italic">{log.remark}</span>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <button 
-                            onClick={() => deleteLog(log.id)}
-                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => deleteLog(log.id)}
+                              className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -342,7 +351,7 @@ export default function HistoryLog() {
               <Filter className="w-5 h-5 text-slate-400" />
               <span className="text-sm font-black text-slate-600 uppercase tracking-wider">Thao tác dữ liệu</span>
             </div>
-            {selectedInbound.size > 0 && (
+            {isAdmin && selectedInbound.size > 0 && (
               <button
                 onClick={deleteSelectedInbound}
                 className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
@@ -362,12 +371,14 @@ export default function HistoryLog() {
               <thead>
                 <tr className="bg-slate-50">
                   <th className="px-4 py-4 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedInbound.size === inboundData.length && inboundData.length > 0}
-                      onChange={toggleSelectAllInbound}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
+                    {isAdmin && (
+                      <input 
+                        type="checkbox" 
+                        checked={selectedInbound.size === inboundData.length && inboundData.length > 0}
+                        onChange={toggleSelectAllInbound}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    )}
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Thời gian</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Mã QR</th>
@@ -395,12 +406,14 @@ export default function HistoryLog() {
                   inboundData.map((item) => (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedInbound.has(item.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-4 py-4 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedInbound.has(item.id)}
-                          onChange={() => toggleSelectInbound(item.id)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
+                        {isAdmin && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedInbound.has(item.id)}
+                            onChange={() => toggleSelectInbound(item.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -426,12 +439,14 @@ export default function HistoryLog() {
                         </div>
                       </td>
                       <td className="px-4 py-4 text-center">
-                        <button 
-                          onClick={() => deleteInbound(item.id)}
-                          className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button 
+                            onClick={() => deleteInbound(item.id)}
+                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

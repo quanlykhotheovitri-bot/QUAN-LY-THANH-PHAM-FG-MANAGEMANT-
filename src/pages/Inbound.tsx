@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function Inbound() {
   const { user: authUser } = useAuth();
+  const isAdmin = authUser?.role === 'admin';
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [selectedScanned, setSelectedScanned] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
@@ -497,7 +498,7 @@ export default function Inbound() {
                 <div className="p-6 border-b border-emerald-100 flex items-center justify-between bg-emerald-600 shadow-md">
                   <h2 className="text-lg font-bold text-white">Danh sách chờ nhập ({scannedItems.length})</h2>
                   <div className="flex items-center gap-2">
-                    {selectedScanned.size > 0 && (
+                    {isAdmin && selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}
                         className="flex items-center gap-2 px-3 py-1.5 bg-white/20 text-white rounded-lg text-xs font-black hover:bg-white/30 transition-all"
@@ -516,13 +517,15 @@ export default function Inbound() {
                         LƯU VÀO KHO
                       </button>
                     )}
-                    <button 
-                      onClick={() => setScannedItems([])}
-                      className="p-2 text-white/70 hover:text-white transition-colors"
-                      title="Xóa tất cả"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => setScannedItems([])}
+                        className="p-2 text-white/70 hover:text-white transition-colors"
+                        title="Xóa tất cả"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 
@@ -537,12 +540,14 @@ export default function Inbound() {
                       <thead>
                         <tr className="bg-[#002060] text-white">
                           <th className="px-2 py-3 border border-slate-300 text-center">
-                            <input 
-                              type="checkbox" 
-                              checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
-                              onChange={toggleSelectAllScanned}
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
+                            {isAdmin && (
+                              <input 
+                                type="checkbox" 
+                                checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
+                                onChange={toggleSelectAllScanned}
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            )}
                           </th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
@@ -562,12 +567,14 @@ export default function Inbound() {
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''}`}
                           >
                             <td className="px-2 py-3 border border-slate-200 text-center">
-                              <input 
-                                type="checkbox" 
-                                checked={selectedScanned.has(item.qrCode)}
-                                onChange={() => toggleSelectScanned(item.qrCode)}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
+                              {isAdmin && (
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedScanned.has(item.qrCode)}
+                                  onChange={() => toggleSelectScanned(item.qrCode)}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              )}
                             </td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qrCode}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
@@ -580,12 +587,14 @@ export default function Inbound() {
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.locationPath}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.date).toLocaleString('vi-VN')}</td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
-                              <button 
-                                onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
-                                className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {isAdmin && (
+                                <button 
+                                  onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -609,7 +618,7 @@ export default function Inbound() {
           <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho (DATA NHẬP KHO)</h2>
-              {selectedHistory.size > 0 && (
+              {isAdmin && selectedHistory.size > 0 && (
                 <button
                   onClick={deleteSelectedHistory}
                   className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
@@ -679,12 +688,14 @@ export default function Inbound() {
                   {historyData.map((item) => (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedHistory.has(item.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedHistory.has(item.id)}
-                          onChange={() => toggleSelectHistory(item.id)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
+                        {isAdmin && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedHistory.has(item.id)}
+                            onChange={() => toggleSelectHistory(item.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
@@ -697,12 +708,14 @@ export default function Inbound() {
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.location_path || 'N/A'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.created_at).toLocaleString('vi-VN')}</td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
-                        <button 
-                          onClick={() => deleteHistoryItem(item.id)}
-                          className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button 
+                            onClick={() => deleteHistoryItem(item.id)}
+                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

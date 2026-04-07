@@ -30,6 +30,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function Outbound() {
   const { user: authUser } = useAuth();
+  const isAdmin = authUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [selectedScanned, setSelectedScanned] = useState<Set<number>>(new Set());
@@ -1230,7 +1231,7 @@ export default function Outbound() {
                         LƯU DATA XUẤT
                       </button>
                     )}
-                    {selectedScanned.size > 0 && (
+                    {isAdmin && selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}
                         className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
@@ -1239,22 +1240,24 @@ export default function Outbound() {
                         Xóa đã chọn ({selectedScanned.size})
                       </button>
                     )}
-                    <button 
-                      onClick={async () => {
-                        const { error } = await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                        if (error) {
-                          setMessage({ type: 'error', text: 'Lỗi khi xóa danh sách: ' + error.message });
-                        } else {
-                          setScannedItems([]);
-                          setSelectedScanned(new Set());
-                          setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách chờ xuất.' });
-                        }
-                      }}
-                      className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
-                      title="Xóa danh sách"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {isAdmin && (
+                      <button 
+                        onClick={async () => {
+                          const { error } = await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                          if (error) {
+                            setMessage({ type: 'error', text: 'Lỗi khi xóa danh sách: ' + error.message });
+                          } else {
+                            setScannedItems([]);
+                            setSelectedScanned(new Set());
+                            setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách chờ xuất.' });
+                          }
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                        title="Xóa danh sách"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1263,15 +1266,17 @@ export default function Outbound() {
                     <thead>
                       <tr className="bg-[#002060] text-white">
                         <th className="px-2 py-3 border border-slate-300 text-center">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
-                            onChange={() => {
-                              if (selectedScanned.size === scannedItems.length) setSelectedScanned(new Set());
-                              else setSelectedScanned(new Set(scannedItems.map((_, i) => i)));
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
+                          {isAdmin && (
+                            <input 
+                              type="checkbox" 
+                              checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
+                              onChange={() => {
+                                if (selectedScanned.size === scannedItems.length) setSelectedScanned(new Set());
+                                else setSelectedScanned(new Set(scannedItems.map((_, i) => i)));
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          )}
                         </th>
                         <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                         <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">DATE</th>
@@ -1296,12 +1301,14 @@ export default function Outbound() {
                         scannedItems.map((item, index) => (
                           <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(index) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
                             <td className="px-2 py-3 border border-slate-200 text-center">
-                              <input 
-                                type="checkbox" 
-                                checked={selectedScanned.has(index)}
-                                onChange={() => toggleSelectScanned(index)}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
+                              {isAdmin && (
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedScanned.has(index)}
+                                  onChange={() => toggleSelectScanned(index)}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              )}
                             </td>
                             <td className="px-4 py-3 border border-slate-200 text-center text-[11px] font-medium text-slate-700">
                               {item.qrCode}
@@ -1335,12 +1342,14 @@ export default function Outbound() {
                                 >
                                   <FileText className="w-4 h-4" />
                                 </button>
-                                <button 
-                                  onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
-                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                {isAdmin && (
+                                  <button 
+                                    onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                    className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1463,23 +1472,25 @@ export default function Outbound() {
                         <Save className="w-3 h-3" />
                         LƯU DATA XUẤT
                       </button>
-                      <button 
-                        onClick={async () => { 
-                          const { error } = await supabase.from('current_pl_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                          if (error) {
-                            setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả PL: ' + error.message });
-                          } else {
-                            setPlItems([]); 
-                            setPlNumbers([]); 
-                            setPlNoInput(''); 
-                            setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách PL hiện tại.' });
-                          }
-                        }}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold hover:bg-rose-100 transition-all"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        XÓA TẤT CẢ
-                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={async () => { 
+                            const { error } = await supabase.from('current_pl_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                            if (error) {
+                              setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả PL: ' + error.message });
+                            } else {
+                              setPlItems([]); 
+                              setPlNumbers([]); 
+                              setPlNoInput(''); 
+                              setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách PL hiện tại.' });
+                            }
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold hover:bg-rose-100 transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          XÓA TẤT CẢ
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1548,12 +1559,14 @@ export default function Outbound() {
                                   >
                                     <FileText className="w-3.5 h-3.5" />
                                   </button>
-                                  <button 
-                                    onClick={() => handleDeletePLItem(item.id)}
-                                    className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {isAdmin && (
+                                    <button 
+                                      onClick={() => handleDeletePLItem(item.id)}
+                                      className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -1612,7 +1625,7 @@ export default function Outbound() {
               </button>
             </div>
             <div className="flex gap-2">
-              {selectedOutbound.size > 0 && (
+              {isAdmin && selectedOutbound.size > 0 && (
                 <button
                   onClick={deleteSelectedOutbound}
                   className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
@@ -1651,15 +1664,17 @@ export default function Outbound() {
                 <thead>
                   <tr className="bg-[#002060] text-white">
                     <th className="px-2 py-3 border border-slate-300 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedOutbound.size === filteredOutbound.length && filteredOutbound.length > 0}
-                        onChange={() => {
-                          if (selectedOutbound.size === filteredOutbound.length) setSelectedOutbound(new Set());
-                          else setSelectedOutbound(new Set(filteredOutbound.map(item => item.id)));
-                        }}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
+                      {isAdmin && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedOutbound.size === filteredOutbound.length && filteredOutbound.length > 0}
+                          onChange={() => {
+                            if (selectedOutbound.size === filteredOutbound.length) setSelectedOutbound(new Set());
+                            else setSelectedOutbound(new Set(filteredOutbound.map(item => item.id)));
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
                     </th>
                     {dataSubTab === 'scan' ? (
                       <>
@@ -1706,17 +1721,19 @@ export default function Outbound() {
                         filteredOutbound.map((item) => (
                             <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedOutbound.has(item.id) ? 'bg-blue-50' : ''} ${dataSubTab === 'scan' && item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
                               <td className="px-2 py-3 border border-slate-200 text-center">
-                                <input 
-                                  type="checkbox" 
-                                  checked={selectedOutbound.has(item.id)}
-                                  onChange={() => {
-                                    const newSelected = new Set(selectedOutbound);
-                                    if (newSelected.has(item.id)) newSelected.delete(item.id);
-                                    else newSelected.add(item.id);
-                                    setSelectedOutbound(newSelected);
-                                  }}
-                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                />
+                                {isAdmin && (
+                                  <input 
+                                    type="checkbox" 
+                                    checked={selectedOutbound.has(item.id)}
+                                    onChange={() => {
+                                      const newSelected = new Set(selectedOutbound);
+                                      if (newSelected.has(item.id)) newSelected.delete(item.id);
+                                      else newSelected.add(item.id);
+                                      setSelectedOutbound(newSelected);
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                )}
                               </td>
                               {dataSubTab === 'scan' ? (
                                 <>
@@ -1756,12 +1773,14 @@ export default function Outbound() {
                                 </>
                               )}
                               <td className="px-4 py-3 border border-slate-200 text-center">
-                                <button 
-                                  onClick={() => deleteOutbound(item.id)}
-                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                {isAdmin && (
+                                  <button 
+                                    onClick={() => deleteOutbound(item.id)}
+                                    className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))

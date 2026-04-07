@@ -148,6 +148,57 @@ export default function Outbound() {
     }
   }
 
+  const exportOutboundData = (format: 'xlsx' | 'csv') => {
+    const data = filteredOutbound.map(item => {
+      if (dataSubTab === 'scan') {
+        return {
+          'QRCODE': item.qr_code,
+          'DATE': formatDate(item.created_at),
+          'OVN Order No': item.so,
+          'RPRO': item.rpro,
+          'KHÁCH HÀNG': item.kh,
+          'PL No': item.pl_no,
+          'Total Box': item.total_boxes,
+          'STATUS': item.status
+        };
+      } else {
+        return {
+          'DATE': formatDate(item.created_at),
+          'OVN Order No': item.so,
+          'RPRO': item.rpro,
+          'KHÁCH HÀNG': item.kh,
+          'PL No': item.pl_no,
+          'Total Box': item.total_boxes,
+          'Scan Xuất': item.scan_count,
+          'Status': item.status,
+          'Location': item.location_path
+        };
+      }
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, dataSubTab === 'scan' ? 'ScanData' : 'PLData');
+    XLSX.writeFile(wb, `Outbound_${dataSubTab}_${new Date().toISOString().split('T')[0]}.${format}`);
+  };
+
+  const exportCurrentPL = (format: 'xlsx' | 'csv') => {
+    const data = plItems.map(item => ({
+      'OVN Order No': item.so,
+      'RPRO': item.rpro,
+      'KHÁCH HÀNG': item.kh,
+      'PL No': item.plNo,
+      'Total Box': item.totalBoxes,
+      'Scan Xuất': item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0),
+      'Status': (item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0)) >= (item.totalBoxes || 0) ? 'ĐỦ' : 'THIẾU'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'CurrentPL');
+    XLSX.writeFile(wb, `CurrentPL_${new Date().toISOString().split('T')[0]}.${format}`);
+  };
+
   async function fetchInventoryBalances() {
     const { data } = await supabase
       .from('inventory_balances')
@@ -1371,6 +1422,20 @@ export default function Outbound() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-400 mr-2">{plItems.length} dòng</span>
                       <button 
+                        onClick={() => exportCurrentPL('xlsx')}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-50 transition-all"
+                      >
+                        <Download className="w-3 h-3 text-blue-600" />
+                        EXCEL
+                      </button>
+                      <button 
+                        onClick={() => exportCurrentPL('csv')}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-50 transition-all"
+                      >
+                        <Download className="w-3 h-3 text-emerald-600" />
+                        CSV
+                      </button>
+                      <button 
                         onClick={handlePrintPL}
                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all"
                       >
@@ -1547,9 +1612,19 @@ export default function Outbound() {
                 <Filter className="w-4 h-4" />
                 Lọc
               </button>
-              <button className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium">
-                <Download className="w-4 h-4" />
-                Xuất Excel
+              <button 
+                onClick={() => exportOutboundData('xlsx')}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium hover:bg-slate-50 transition-all"
+              >
+                <Download className="w-4 h-4 text-blue-600" />
+                Excel
+              </button>
+              <button 
+                onClick={() => exportOutboundData('csv')}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl flex items-center gap-2 text-sm font-medium hover:bg-slate-50 transition-all"
+              >
+                <Download className="w-4 h-4 text-emerald-600" />
+                CSV
               </button>
             </div>
           </div>

@@ -11,10 +11,14 @@ import {
   Package,
   MapPin,
   User,
-  Hash
+  Hash,
+  Download,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, SourceImportLine } from '../types';
+import * as XLSX from 'xlsx';
+import { formatDate } from '../lib/utils';
 
 export default function Inbound() {
   const [scannedItems, setScannedItems] = useState<any[]>([]);
@@ -41,6 +45,25 @@ export default function Inbound() {
       fetchHistory();
     }
   }, [activeTab]);
+
+  const exportHistory = (format: 'xlsx' | 'csv') => {
+    const data = historyData.map(item => ({
+      'QRCODE': item.qr_code,
+      'DATE': formatDate(item.created_at),
+      'OVN Order No': item.so,
+      'RPRO': item.rpro,
+      'KHÁCH HÀNG': item.kh,
+      'LOẠI THÙNG': item.box_type,
+      'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `1 / ${item.total_boxes}` : '1',
+      'VỊ TRÍ': item.location_path,
+      'NGƯỜI NHẬP': item.user_email
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'InboundHistory');
+    XLSX.writeFile(wb, `InboundHistory_${new Date().toISOString().split('T')[0]}.${format}`);
+  };
 
   async function fetchHistory() {
     setHistoryLoading(true);
@@ -558,7 +581,9 @@ export default function Inbound() {
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">{item.kh}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.boxType}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.totalBoxes}</td>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
+                              {item.totalBoxes > 0 ? `1 / ${item.totalBoxes}` : '1'}
+                            </td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.locationPath}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.date).toLocaleString('vi-VN')}</td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
@@ -601,12 +626,28 @@ export default function Inbound() {
                 </button>
               )}
             </div>
-            <button 
-              onClick={fetchHistory}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-            >
-              <CheckCircle2 className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => exportHistory('xlsx')}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
+              >
+                <Download className="w-3.5 h-3.5 text-blue-600" />
+                Excel
+              </button>
+              <button 
+                onClick={() => exportHistory('csv')}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                CSV
+              </button>
+              <button 
+                onClick={fetchHistory}
+                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             {historyLoading ? (
@@ -657,7 +698,9 @@ export default function Inbound() {
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">{item.kh}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.total_boxes || item.quantity}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
+                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
+                      </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.location_path || 'N/A'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.created_at).toLocaleString('vi-VN')}</td>
                       <td className="px-2 py-3 border border-slate-200 text-center">

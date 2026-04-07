@@ -25,9 +25,9 @@ import { motion } from 'motion/react';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
-    totalInventory: 0,
-    todayInbound: 0,
-    todayOutbound: 0,
+    totalInventory: { orders: 0, boxes: 0 },
+    todayInbound: { orders: 0, boxes: 0 },
+    todayOutbound: { orders: 0, boxes: 0 },
     lowStock: 0,
   });
   const [locationData, setLocationData] = useState<any[]>([]);
@@ -45,24 +45,30 @@ export default function Dashboard() {
       // Total Inventory
       const { data: inventory } = await supabase
         .from('inventory_balances')
-        .select('quantity');
-      const total = inventory?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+        .select('so, rpro, quantity');
+      
+      const invOrders = new Set(inventory?.map(item => `${item.so}|${item.rpro}`));
+      const invTotalBoxes = inventory?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Today's Inbound
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const { data: inbound } = await supabase
         .from('inbound_transactions')
-        .select('quantity')
+        .select('so, rpro, quantity')
         .gte('created_at', today.toISOString());
-      const inQty = inbound?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+      
+      const inOrders = new Set(inbound?.map(item => `${item.so}|${item.rpro}`));
+      const inTotalBoxes = inbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Today's Outbound
       const { data: outbound } = await supabase
         .from('outbound_transactions')
-        .select('quantity')
+        .select('so, rpro, quantity')
         .gte('created_at', today.toISOString());
-      const outQty = outbound?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+      
+      const outOrders = new Set(outbound?.map(item => `${item.so}|${item.rpro}`));
+      const outTotalBoxes = outbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Inventory by Location
       const { data: locData } = await supabase
@@ -102,9 +108,9 @@ export default function Dashboard() {
       setSlowMoving(slowData || []);
 
       setStats({
-        totalInventory: total,
-        todayInbound: inQty,
-        todayOutbound: outQty,
+        totalInventory: { orders: invOrders.size, boxes: invTotalBoxes },
+        todayInbound: { orders: inOrders.size, boxes: inTotalBoxes },
+        todayOutbound: { orders: outOrders.size, boxes: outTotalBoxes },
         lowStock: slowData?.length || 0,
       });
       setLocationData(formattedLocData);
@@ -118,7 +124,7 @@ export default function Dashboard() {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-  const StatCard = ({ title, value, icon: Icon, color, trend }: any) => (
+  const StatCard = ({ title, value, icon: Icon, color, trend, isDual }: any) => (
     <motion.div 
       whileHover={{ y: -5 }}
       className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
@@ -134,7 +140,20 @@ export default function Dashboard() {
         )}
       </div>
       <h3 className="text-slate-500 text-sm font-medium">{title}</h3>
-      <p className="text-2xl font-bold text-slate-900 mt-1">{value.toLocaleString()}</p>
+      {isDual ? (
+        <div className="mt-1 space-y-1">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-900">{value.orders.toLocaleString()}</span>
+            <span className="text-xs text-slate-400 font-medium">ĐƠN</span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xl font-bold text-blue-600">{value.boxes.toLocaleString()}</span>
+            <span className="text-xs text-slate-400 font-medium">THÙNG</span>
+          </div>
+        </div>
+      ) : (
+        <p className="text-2xl font-bold text-slate-900 mt-1">{value.toLocaleString()}</p>
+      )}
     </motion.div>
   );
 
@@ -162,9 +181,9 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Tổng tồn kho" value={stats.totalInventory} icon={Package} color="bg-blue-600" />
-        <StatCard title="Nhập kho hôm nay" value={stats.todayInbound} icon={TrendingUp} color="bg-emerald-600" />
-        <StatCard title="Xuất kho hôm nay" value={stats.todayOutbound} icon={TrendingDown} color="bg-orange-600" />
+        <StatCard title="Tổng tồn kho" value={stats.totalInventory} icon={Package} color="bg-blue-600" isDual />
+        <StatCard title="Nhập kho hôm nay" value={stats.todayInbound} icon={TrendingUp} color="bg-emerald-600" isDual />
+        <StatCard title="Xuất kho hôm nay" value={stats.todayOutbound} icon={TrendingDown} color="bg-orange-600" isDual />
         <StatCard title="Cảnh báo tồn" value={stats.lowStock} icon={AlertTriangle} color="bg-rose-600" />
       </div>
 

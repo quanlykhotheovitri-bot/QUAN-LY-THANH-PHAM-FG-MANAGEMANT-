@@ -188,12 +188,15 @@ export default function Inventory() {
     const groups: { [key: string]: any } = {};
     
     inventory.forEach(item => {
-      const key = `${item.so}|${item.rpro}`;
+      // Group by combination of SO and RPRO
+      const key = `${item.so || ''}|${item.rpro || ''}`;
       if (!groups[key]) {
         groups[key] = {
           ...item,
           ids: [item.id],
           quantity: item.quantity || 0,
+          // For total_boxes, we take the value from the first item in the group
+          // since total_boxes represents the total for the entire SO/RPRO order
           total_boxes: item.total_boxes || 0,
           locations: new Set([item.location_path]),
           last_updated: item.last_updated
@@ -201,7 +204,10 @@ export default function Inventory() {
       } else {
         groups[key].ids.push(item.id);
         groups[key].quantity += (item.quantity || 0);
-        groups[key].total_boxes += (item.total_boxes || 0);
+        // Do NOT sum total_boxes, as it's the same for all items in this SO/RPRO group
+        if (!groups[key].total_boxes && item.total_boxes) {
+          groups[key].total_boxes = item.total_boxes;
+        }
         if (item.location_path) groups[key].locations.add(item.location_path);
         if (new Date(item.last_updated) > new Date(groups[key].last_updated)) {
           groups[key].last_updated = item.last_updated;
@@ -221,14 +227,13 @@ export default function Inventory() {
     (item.kh && item.kh.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const exportToExcel = () => {
+  const exportData = (format: 'xlsx' | 'csv') => {
     const data = filteredInventory.map(item => ({
-      'QRCODE': `${item.so}|${item.rpro}`,
       'SO': item.so,
       'RPRO': item.rpro,
       'KHÁCH HÀNG': item.kh,
       'LOẠI THÙNG': item.box_type,
-      'SỐ THÙNG ĐƠN HÀNG': `${item.quantity} / ${item.total_boxes || '?'}`,
+      'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
       'VỊ TRÍ': item.location_path,
       'NGÀY NHẬP': formatDate(item.last_updated)
     }));
@@ -236,7 +241,7 @@ export default function Inventory() {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'TonKho');
-    XLSX.writeFile(wb, `TonKho_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `TonKho_Export_${new Date().toISOString().split('T')[0]}.${format}`);
   };
 
   return (
@@ -271,11 +276,18 @@ export default function Inventory() {
             Nhập Excel
           </button>
           <button
-            onClick={exportToExcel}
+            onClick={() => exportData('xlsx')}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-blue-600" />
             Xuất Excel
+          </button>
+          <button
+            onClick={() => exportData('csv')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
+          >
+            <Download className="w-4 h-4 text-emerald-600" />
+            Xuất CSV
           </button>
           <button
             onClick={async () => {
@@ -386,7 +398,7 @@ export default function Inventory() {
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.kh}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
-                        {item.quantity} / {item.total_boxes || '?'}
+                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         <div className="flex items-center justify-center gap-1 text-blue-600 font-bold">
@@ -416,7 +428,7 @@ export default function Inventory() {
                   <td className="px-2 py-3 border border-slate-300 text-center"></td>
                   <td colSpan={4} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
                   <td className="px-4 py-3 text-[11px] border border-slate-300 text-center text-blue-700">
-                    {filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0)} / {filteredInventory.reduce((sum, item) => sum + (item.total_boxes || 0), 0)}
+                    {filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0)}
                   </td>
                   <td colSpan={3} className="px-4 py-3 border border-slate-300"></td>
                 </tr>

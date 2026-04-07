@@ -36,7 +36,7 @@ export default function Inventory() {
       .order('last_updated', { ascending: false });
     
     if (error) {
-      const errorMsg = error.message === 'Failed to fetch' 
+      const errorMsg = error.message.includes('Failed to fetch')
         ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
         : error.message;
       setMessage({ type: 'error', text: 'Lỗi khi tải tồn kho: ' + errorMsg });
@@ -73,7 +73,7 @@ export default function Inventory() {
       .in('id', ids);
 
     if (error) {
-      const errorMsg = error.message === 'Failed to fetch' 
+      const errorMsg = error.message.includes('Failed to fetch')
         ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
         : error.message;
       setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + errorMsg });
@@ -104,7 +104,7 @@ export default function Inventory() {
         .in('id', idsToDelete);
         
       if (error) {
-        const errorMsg = error.message === 'Failed to fetch' 
+        const errorMsg = error.message.includes('Failed to fetch')
           ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
           : error.message;
         throw new Error(errorMsg);

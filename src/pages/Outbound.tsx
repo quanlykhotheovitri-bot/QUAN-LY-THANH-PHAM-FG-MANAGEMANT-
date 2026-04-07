@@ -638,7 +638,7 @@ export default function Outbound() {
 
     const { error } = await supabase.from('current_pl_items').insert(allPlItemsToInsert);
     if (error) {
-      const errorMsg = error.message === 'Failed to fetch' 
+      const errorMsg = error.message.includes('Failed to fetch')
         ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
         : error.message;
       setMessage({ type: 'error', text: 'Lỗi khi lưu danh sách PL: ' + errorMsg });
@@ -937,7 +937,12 @@ export default function Outbound() {
       });
 
       const { error } = await supabase.from('outbound_transactions').insert(itemsToSave);
-      if (error) throw error;
+      if (error) {
+        const errorMsg = error.message.includes('Failed to fetch')
+          ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+          : error.message;
+        throw new Error(errorMsg);
+      }
 
       setMessage({ type: 'success', text: `Đã lưu ${itemsToSave.length} dòng dữ liệu PL vào Data xuất.` });
       fetchOutboundData();

@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [customerData, setCustomerData] = useState<any[]>([]);
   const [slowMoving, setSlowMoving] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -41,11 +42,14 @@ export default function Dashboard() {
 
   async function fetchStats() {
     setLoading(true);
+    setError(null);
     try {
       // Total Inventory
-      const { data: inventory } = await supabase
+      const { data: inventory, error: invError } = await supabase
         .from('inventory_balances')
         .select('so, rpro, quantity');
+      
+      if (invError) throw invError;
       
       const invOrders = new Set(inventory?.map(item => `${item.so}|${item.rpro}`));
       const invTotalBoxes = inventory?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
@@ -53,27 +57,33 @@ export default function Dashboard() {
       // Today's Inbound
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const { data: inbound } = await supabase
+      const { data: inbound, error: inError } = await supabase
         .from('inbound_transactions')
         .select('so, rpro, quantity')
         .gte('created_at', today.toISOString());
+      
+      if (inError) throw inError;
       
       const inOrders = new Set(inbound?.map(item => `${item.so}|${item.rpro}`));
       const inTotalBoxes = inbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Today's Outbound
-      const { data: outbound } = await supabase
+      const { data: outbound, error: outError } = await supabase
         .from('outbound_transactions')
         .select('so, rpro, quantity')
         .gte('created_at', today.toISOString());
+      
+      if (outError) throw outError;
       
       const outOrders = new Set(outbound?.map(item => `${item.so}|${item.rpro}`));
       const outTotalBoxes = outbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
       // Inventory by Location
-      const { data: locData } = await supabase
+      const { data: locData, error: locError } = await supabase
         .from('inventory_balances')
         .select('quantity, warehouse_locations(zone)');
+      
+      if (locError) throw locError;
       
       const locMap: Record<string, number> = {};
       locData?.forEach((item: any) => {
@@ -84,9 +94,11 @@ export default function Dashboard() {
       const formattedLocData = Object.entries(locMap).map(([name, value]) => ({ name, value }));
 
       // Inventory by Customer
-      const { data: custData } = await supabase
+      const { data: custData, error: custError } = await supabase
         .from('inventory_balances')
         .select('quantity, kh');
+      
+      if (custError) throw custError;
       
       const custMap: Record<string, number> = {};
       custData?.forEach(item => {
@@ -99,11 +111,13 @@ export default function Dashboard() {
       // Slow Moving Items (Last updated > 30 days ago)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const { data: slowData } = await supabase
+      const { data: slowData, error: slowError } = await supabase
         .from('inventory_balances')
         .select('*, warehouse_locations(full_path)')
         .lt('last_updated', thirtyDaysAgo.toISOString())
         .limit(5);
+      
+      if (slowError) throw slowError;
       
       setSlowMoving(slowData || []);
 
@@ -115,8 +129,12 @@ export default function Dashboard() {
       });
       setLocationData(formattedLocData);
       setCustomerData(formattedCustData);
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+    } catch (err: any) {
+      console.error('Error fetching dashboard stats:', err);
+      const errorMsg = err.message?.includes('Failed to fetch')
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : err.message || 'Không thể tải dữ liệu Dashboard';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -161,6 +179,22 @@ export default function Dashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-rose-50 border border-rose-200 p-6 rounded-2xl text-center">
+        <AlertTriangle className="w-12 h-12 text-rose-600 mx-auto mb-4" />
+        <h2 className="text-lg font-bold text-rose-900 mb-2">Lỗi tải dữ liệu</h2>
+        <p className="text-rose-700 mb-6">{error}</p>
+        <button 
+          onClick={fetchStats}
+          className="px-6 py-2 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-all"
+        >
+          Thử lại
+        </button>
       </div>
     );
   }

@@ -255,7 +255,10 @@ export default function Inbound() {
       }
     } catch (error: any) {
       console.error('Inbound process error:', error);
-      setMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra khi nhập kho.' });
+      const errorMsg = error.message.includes('Failed to fetch')
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: errorMsg || 'Có lỗi xảy ra khi nhập kho.' });
     } finally {
       setLoading(false);
     }
@@ -305,7 +308,10 @@ export default function Inbound() {
   const deleteHistoryItem = async (id: string) => {
     const { error } = await supabase.from('inbound_transactions').delete().eq('id', id);
     if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+      const errorMsg = error.message.includes('Failed to fetch')
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + errorMsg });
     } else {
       setMessage({ type: 'success', text: 'Đã xóa bản ghi thành công.' });
       fetchHistory();
@@ -321,7 +327,10 @@ export default function Inbound() {
       .in('id', Array.from(selectedHistory));
 
     if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+      const errorMsg = error.message.includes('Failed to fetch')
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + errorMsg });
     } else {
       setMessage({ type: 'success', text: `Đã xóa ${selectedHistory.size} bản ghi thành công.` });
       setSelectedHistory(new Set());

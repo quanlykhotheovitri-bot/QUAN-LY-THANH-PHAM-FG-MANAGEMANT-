@@ -1158,18 +1158,6 @@ export default function Outbound() {
 
       {activeTab === 'scan' && (
         <div className="space-y-6">
-          <div className="flex justify-end">
-            <button
-              onClick={() => setIsScanning(!isScanning)}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
-                isScanning ? 'bg-rose-500 text-white' : 'bg-orange-600 text-white hover:bg-orange-700'
-              }`}
-            >
-              <Scan className="w-5 h-5" />
-              {isScanning ? 'Dừng Scan' : 'Bắt đầu Scan'}
-            </button>
-          </div>
-
           <AnimatePresence>
             {isScanning && (
               <motion.div
@@ -1209,7 +1197,7 @@ export default function Outbound() {
                     />
                     <button
                       onClick={handleProcessManual}
-                      className="w-full mt-4 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-black transition-all shadow-lg active:scale-95"
+                      className="w-full mt-4 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black transition-all shadow-lg active:scale-95"
                     >
                       XỬ LÝ MÃ
                     </button>

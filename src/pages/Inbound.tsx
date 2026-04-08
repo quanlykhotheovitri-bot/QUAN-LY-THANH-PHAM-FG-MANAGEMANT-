@@ -393,16 +393,6 @@ export default function Inbound() {
                 THÙNG GIẤY
               </button>
             </div>
-
-            <button
-              onClick={() => setIsScanning(!isScanning)}
-              className={`flex items-center gap-2 px-6 py-2 rounded-xl font-semibold transition-all ${
-                isScanning ? 'bg-rose-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              <Scan className="w-5 h-5" />
-              {isScanning ? 'Dừng Scan' : 'Bắt đầu Scan'}
-            </button>
           </div>
         )}
       </div>
@@ -451,7 +441,7 @@ export default function Inbound() {
                     />
                     <button
                       onClick={handleProcessManual}
-                      className="w-full mt-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-all"
+                      className="w-full mt-2 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg text-sm font-bold transition-all"
                     >
                       Xử lý mã
                     </button>

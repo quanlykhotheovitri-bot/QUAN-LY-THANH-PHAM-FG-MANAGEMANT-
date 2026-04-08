@@ -39,11 +39,13 @@ export default function PlasticBins() {
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<PlasticBinCustomer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ code: '', name: '' });
+  const [customerDeleteConfirmId, setCustomerDeleteConfirmId] = useState<string | null>(null);
 
   // Return Edit states
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [editingReturn, setEditingReturn] = useState<any | null>(null);
   const [returnForm, setReturnForm] = useState({ qrcode: '', customer_name: '', bin_type: '', quantity: 1 });
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -183,16 +185,23 @@ export default function PlasticBins() {
   };
 
   const deleteCustomer = async (id: string) => {
-    if (!window.confirm('Xác nhận xóa khách hàng này?')) return;
+    if (!isAdmin) {
+      setMessage({ type: 'error', text: 'Bạn không có quyền thực hiện thao tác này' });
+      return;
+    }
+    setLoading(true);
     try {
       const { error } = await supabase
         .from('plastic_bin_customers')
         .delete()
         .eq('id', id);
       if (error) throw error;
+      setCustomerDeleteConfirmId(null);
       fetchCustomers();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -201,11 +210,9 @@ export default function PlasticBins() {
       setMessage({ type: 'error', text: 'Bạn không có quyền thực hiện thao tác này' });
       return;
     }
-    if (!window.confirm('Xác nhận xóa bản ghi đã lưu này?')) return;
     
     setLoading(true);
     try {
-      console.log('Deleting return record:', id);
       const { error } = await supabase
         .from('plastic_bin_returns')
         .delete()
@@ -214,6 +221,7 @@ export default function PlasticBins() {
       if (error) throw error;
       
       setMessage({ type: 'success', text: 'Đã xóa bản ghi thành công' });
+      setDeleteConfirmId(null);
       await fetchRecentReturns();
     } catch (err: any) {
       console.error('Error deleting return:', err);
@@ -527,13 +535,30 @@ export default function PlasticBins() {
                                   >
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
-                                  <button 
-                                    onClick={() => deleteSavedReturn(item.id)}
-                                    className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                                    title="Xóa bản ghi đã lưu"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {deleteConfirmId === item.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        onClick={() => deleteSavedReturn(item.id)}
+                                        className="px-2 py-0.5 bg-rose-500 text-white rounded text-[10px] font-bold hover:bg-rose-600 transition-all"
+                                      >
+                                        XÓA
+                                      </button>
+                                      <button 
+                                        onClick={() => setDeleteConfirmId(null)}
+                                        className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-300 transition-all"
+                                      >
+                                        HỦY
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setDeleteConfirmId(item.id)}
+                                      className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                      title="Xóa bản ghi đã lưu"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -622,9 +647,32 @@ export default function PlasticBins() {
                               <Edit2 className="w-4 h-4" />
                             </button>
                             {isAdmin && (
-                              <button onClick={() => deleteCustomer(item.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center gap-2">
+                                {customerDeleteConfirmId === item.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <button 
+                                      onClick={() => deleteCustomer(item.id)}
+                                      className="px-2 py-1 bg-rose-500 text-white rounded text-[10px] font-bold hover:bg-rose-600 transition-all"
+                                    >
+                                      XÓA
+                                    </button>
+                                    <button 
+                                      onClick={() => setCustomerDeleteConfirmId(null)}
+                                      className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-300 transition-all"
+                                    >
+                                      HỦY
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={() => setCustomerDeleteConfirmId(item.id)} 
+                                    className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                    title="Xóa khách hàng"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>

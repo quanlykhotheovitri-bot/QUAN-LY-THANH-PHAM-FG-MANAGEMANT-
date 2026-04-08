@@ -63,3 +63,14 @@ export interface PlasticBinReturn {
   quantity: number;
   created_at?: string;
 }
+
+export interface SampleTransaction {
+  id: string;
+  qrcode: string;
+  sso?: string;
+  line?: string;
+  type: 'inbound' | 'outbound';
+  quantity: number;
+  transaction_date: string;
+  created_at?: string;
+}

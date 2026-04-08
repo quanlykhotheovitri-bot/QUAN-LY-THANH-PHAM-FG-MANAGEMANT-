@@ -25,6 +25,7 @@ export default function HistoryLog() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [filter, setFilter] = useState('ALL');
   const [activeView, setActiveView] = useState<'movements' | 'inbound'>('movements');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (activeView === 'movements') {
@@ -74,10 +75,10 @@ export default function HistoryLog() {
   };
 
   const toggleSelectAllLogs = () => {
-    if (selectedLogs.size === logs.length) {
+    if (selectedLogs.size === filteredLogs.length && filteredLogs.length > 0) {
       setSelectedLogs(new Set());
     } else {
-      setSelectedLogs(new Set(logs.map(log => log.id)));
+      setSelectedLogs(new Set(filteredLogs.map(log => log.id)));
     }
   };
 
@@ -119,10 +120,10 @@ export default function HistoryLog() {
   };
 
   const toggleSelectAllInbound = () => {
-    if (selectedInbound.size === inboundData.length) {
+    if (selectedInbound.size === filteredInbound.length && filteredInbound.length > 0) {
       setSelectedInbound(new Set());
     } else {
-      setSelectedInbound(new Set(inboundData.map(item => item.id)));
+      setSelectedInbound(new Set(filteredInbound.map(item => item.id)));
     }
   };
 
@@ -152,6 +153,42 @@ export default function HistoryLog() {
       fetchInboundData();
     }
   };
+
+  const deleteAllLogs = async () => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ bản ghi biến động kho?')) return;
+    setLoading(true);
+    const { error } = await supabase.from('inventory_movements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: 'Đã xóa tất cả bản ghi biến động kho.' });
+      fetchLogs();
+    }
+    setLoading(false);
+  };
+
+  const deleteAllInbound = async () => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ bản ghi nhập kho?')) return;
+    setLoading(true);
+    const { error } = await supabase.from('inbound_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: 'Đã xóa tất cả bản ghi nhập kho.' });
+      fetchInboundData();
+    }
+    setLoading(false);
+  };
+
+  const filteredLogs = logs.filter(log => 
+    log.qr_code.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredInbound = inboundData.filter(item => 
+    item.qr_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.so && item.so.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (item.rpro && item.rpro.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const getTypeStyle = (type: string) => {
     switch (type) {
@@ -219,29 +256,52 @@ export default function HistoryLog() {
 
       {activeView === 'movements' ? (
         <div className="space-y-6">
-          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-3 items-center justify-between">
-            <div className="flex gap-2">
-              {['ALL', 'INBOUND', 'OUTBOUND', 'TRANSFER'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all border-2 ${
-                    filter === f ? 'bg-blue-600 text-white border-blue-600 shadow-lg' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {f === 'ALL' ? 'TẤT CẢ' : f}
-                </button>
-              ))}
+          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-4 items-center justify-between">
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex gap-2">
+                {['ALL', 'INBOUND', 'OUTBOUND', 'TRANSFER'].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all border-2 ${
+                      filter === f ? 'bg-blue-600 text-white border-blue-600 shadow-lg' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {f === 'ALL' ? 'TẤT CẢ' : f}
+                  </button>
+                ))}
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm SO, RPRO, QR..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 bg-slate-50 border-2 border-slate-100 rounded-xl text-xs focus:border-blue-500 focus:ring-0 transition-all w-64"
+                />
+              </div>
             </div>
-            {isAdmin && selectedLogs.size > 0 && (
-              <button
-                onClick={deleteSelectedLogs}
-                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
-              >
-                <Trash2 className="w-4 h-4" />
-                XÓA ĐÃ CHỌN ({selectedLogs.size})
-              </button>
-            )}
+            <div className="flex gap-2">
+              {isAdmin && (
+                <button
+                  onClick={deleteAllLogs}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-black hover:bg-rose-700 transition-all shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  XÓA TẤT CẢ
+                </button>
+              )}
+              {isAdmin && selectedLogs.size > 0 && (
+                <button
+                  onClick={deleteSelectedLogs}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  XÓA ĐÃ CHỌN ({selectedLogs.size})
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
@@ -256,7 +316,7 @@ export default function HistoryLog() {
                       {isAdmin && (
                         <input 
                           type="checkbox" 
-                          checked={selectedLogs.size === logs.length && logs.length > 0}
+                          checked={selectedLogs.size === filteredLogs.length && filteredLogs.length > 0}
                           onChange={toggleSelectAllLogs}
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
@@ -272,19 +332,19 @@ export default function HistoryLog() {
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                       </td>
                     </tr>
-                  ) : logs.length === 0 ? (
+                  ) : filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center">
-                        <History className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <HistoryIcon className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                         <p className="text-slate-400">Chưa có lịch sử thao tác nào</p>
                       </td>
                     </tr>
                   ) : (
-                    logs.map((log) => (
+                    filteredLogs.map((log) => (
                       <tr key={log.id} className={`hover:bg-slate-50 transition-colors ${selectedLogs.has(log.id) ? 'bg-blue-50' : ''}`}>
                         <td className="px-4 py-4 text-center">
                           {isAdmin && (
@@ -346,20 +406,43 @@ export default function HistoryLog() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-3 items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-slate-400" />
-              <span className="text-sm font-black text-slate-600 uppercase tracking-wider">Thao tác dữ liệu</span>
+          <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md flex flex-wrap gap-4 items-center justify-between">
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex items-center gap-2">
+                <Filter className="w-5 h-5 text-slate-400" />
+                <span className="text-sm font-black text-slate-600 uppercase tracking-wider">Thao tác dữ liệu</span>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm SO, RPRO, QR..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 bg-slate-50 border-2 border-slate-100 rounded-xl text-xs focus:border-blue-500 focus:ring-0 transition-all w-64"
+                />
+              </div>
             </div>
-            {isAdmin && selectedInbound.size > 0 && (
-              <button
-                onClick={deleteSelectedInbound}
-                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
-              >
-                <Trash2 className="w-4 h-4" />
-                XÓA ĐÃ CHỌN ({selectedInbound.size})
-              </button>
-            )}
+            <div className="flex gap-2">
+              {isAdmin && (
+                <button
+                  onClick={deleteAllInbound}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-black hover:bg-rose-700 transition-all shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  XÓA TẤT CẢ
+                </button>
+              )}
+              {isAdmin && selectedInbound.size > 0 && (
+                <button
+                  onClick={deleteSelectedInbound}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black hover:bg-rose-100 transition-all border-2 border-rose-200 shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  XÓA ĐÃ CHỌN ({selectedInbound.size})
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
@@ -374,7 +457,7 @@ export default function HistoryLog() {
                     {isAdmin && (
                       <input 
                         type="checkbox" 
-                        checked={selectedInbound.size === inboundData.length && inboundData.length > 0}
+                        checked={selectedInbound.size === filteredInbound.length && filteredInbound.length > 0}
                         onChange={toggleSelectAllInbound}
                         className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
@@ -391,19 +474,19 @@ export default function HistoryLog() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                     </td>
                   </tr>
-                ) : inboundData.length === 0 ? (
+                ) : filteredInbound.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <ArrowDownLeft className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                       <p className="text-slate-400">Chưa có dữ liệu nhập kho nào</p>
                     </td>
                   </tr>
                 ) : (
-                  inboundData.map((item) => (
+                  filteredInbound.map((item) => (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedInbound.has(item.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-4 py-4 text-center">
                         {isAdmin && (

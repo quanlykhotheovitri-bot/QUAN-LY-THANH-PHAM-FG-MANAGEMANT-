@@ -28,11 +28,9 @@ export default function Dashboard() {
     totalInventory: { orders: 0, boxes: 0 },
     todayInbound: { orders: 0, boxes: 0 },
     todayOutbound: { orders: 0, boxes: 0 },
-    lowStock: 0,
   });
-  const [locationData, setLocationData] = useState<any[]>([]);
-  const [customerData, setCustomerData] = useState<any[]>([]);
-  const [slowMoving, setSlowMoving] = useState<any[]>([]);
+  const [agingData, setAgingData] = useState<any[]>([]);
+  const [slowMovingSOs, setSlowMovingSOs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +45,7 @@ export default function Dashboard() {
       // Total Inventory
       const { data: inventory, error: invError } = await supabase
         .from('inventory_balances')
-        .select('so, rpro, quantity');
+        .select('so, rpro, quantity, last_updated, location_path, qr_code');
       
       if (invError) throw invError;
       
@@ -78,76 +76,64 @@ export default function Dashboard() {
       const outOrders = new Set(outbound?.map(item => `${item.so}|${item.rpro}`));
       const outTotalBoxes = outbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
 
-      // Inventory by Location
-      const { data: inventoryData, error: invDataError } = await supabase
-        .from('inventory_balances')
-        .select('quantity, location_path');
-      
-      const { data: locations, error: locsError } = await supabase
-        .from('warehouse_locations')
-        .select('full_path, zone');
+      // Aging Calculation
+      const now = new Date();
+      const agingGroups = [
+        { name: 'Dưới 10 ngày', min: 0, max: 10, quantity: 0 as number, soSet: new Set<string>() },
+        { name: '11-20 ngày', min: 11, max: 20, quantity: 0 as number, soSet: new Set<string>() },
+        { name: '21-30 ngày', min: 21, max: 30, quantity: 0 as number, soSet: new Set<string>() },
+        { name: '31-60 ngày', min: 31, max: 60, quantity: 0 as number, soSet: new Set<string>() },
+        { name: '61-90 ngày', min: 61, max: 90, quantity: 0 as number, soSet: new Set<string>() },
+        { name: 'Trên 90 ngày', min: 91, max: 99999, quantity: 0 as number, soSet: new Set<string>() },
+      ];
 
-      if (invDataError) throw invDataError;
-      if (locsError) throw locsError;
-      
-      const locMap: Record<string, number> = {};
-      inventoryData?.forEach((item: any) => {
-        // Handle potential multiple locations separated by comma
-        const paths = (item.location_path || '').split(',').map((p: string) => p.trim());
-        const primaryPath = paths[0];
+      const soAgingMap: Record<string, { quantity: number, maxAge: number, items: any[] }> = {};
+
+      inventory?.forEach(item => {
+        const entryDate = new Date(item.last_updated);
+        const diffDays = Math.floor((now.getTime() - entryDate.getTime()) / (1000 * 3600 * 24));
         
-        const locMatch = locations?.find(l => l.full_path === primaryPath);
-        const zone = locMatch?.zone || 'Unknown';
-        locMap[zone] = (locMap[zone] || 0) + item.quantity;
-      });
-      
-      const formattedLocData = Object.entries(locMap).map(([name, value]) => ({ name, value }));
+        const group = agingGroups.find(g => diffDays >= g.min && diffDays <= g.max);
+        if (group) {
+          group.quantity += (item.quantity || 0);
+          if (item.so) group.soSet.add(item.so);
+        }
 
-      // Inventory by Customer
-      const { data: custData, error: custError } = await supabase
-        .from('inventory_balances')
-        .select('quantity, kh');
-      
-      if (custError) throw custError;
-      
-      const custMap: Record<string, number> = {};
-      custData?.forEach(item => {
-        const kh = item.kh || 'General';
-        custMap[kh] = (custMap[kh] || 0) + item.quantity;
+        // Group by SO for the detail table
+        if (item.so) {
+          if (!soAgingMap[item.so]) {
+            soAgingMap[item.so] = { quantity: 0, maxAge: 0, items: [] };
+          }
+          soAgingMap[item.so].quantity += (item.quantity || 0);
+          soAgingMap[item.so].maxAge = Math.max(soAgingMap[item.so].maxAge, diffDays);
+          soAgingMap[item.so].items.push(item);
+        }
       });
-      
-      const formattedCustData = Object.entries(custMap).map(([name, value]) => ({ name, value }));
 
-      // Slow Moving Items (Last updated > 30 days ago)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const { data: slowData, error: slowError } = await supabase
-        .from('inventory_balances')
-        .select('*')
-        .lt('last_updated', thirtyDaysAgo.toISOString())
-        .limit(5);
-      
-      if (slowError) throw slowError;
-      
-      // Map location full_path for slow moving items manually
-      const slowMovingWithLoc = slowData?.map(item => {
-        const paths = (item.location_path || '').split(',').map((p: string) => p.trim());
-        return {
-          ...item,
-          location_full_path: paths[0] || 'N/A'
-        };
-      });
-      
-      setSlowMoving(slowMovingWithLoc || []);
+      const formattedAgingData = agingGroups.map(g => ({
+        name: g.name,
+        quantity: g.quantity,
+        sos: g.soSet.size
+      }));
+
+      // Filter SOs that are "slow moving" (e.g. > 30 days) for the table
+      const slowSOs = Object.entries(soAgingMap)
+        .filter(([_, data]) => data.maxAge > 30)
+        .map(([so, data]) => ({
+          so,
+          quantity: data.quantity,
+          age: data.maxAge,
+          lastItem: data.items[0] // For display purposes
+        }))
+        .sort((a, b) => b.age - a.age);
 
       setStats({
         totalInventory: { orders: invOrders.size, boxes: invTotalBoxes },
         todayInbound: { orders: inOrders.size, boxes: inTotalBoxes },
         todayOutbound: { orders: outOrders.size, boxes: outTotalBoxes },
-        lowStock: slowData?.length || 0,
       });
-      setLocationData(formattedLocData);
-      setCustomerData(formattedCustData);
+      setAgingData(formattedAgingData);
+      setSlowMovingSOs(slowSOs);
     } catch (err: any) {
       console.error('Error fetching dashboard stats:', err);
       const errorMsg = err.message?.includes('Failed to fetch')
@@ -243,23 +229,22 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard title="Tổng tồn kho" value={stats.totalInventory} icon={Package} color="bg-blue-600" isDual />
         <StatCard title="Nhập kho hôm nay" value={stats.todayInbound} icon={TrendingUp} color="bg-emerald-600" isDual />
         <StatCard title="Xuất kho hôm nay" value={stats.todayOutbound} icon={TrendingDown} color="bg-orange-600" isDual />
-        <StatCard title="Cảnh báo tồn" value={stats.lowStock} icon={AlertTriangle} color="bg-rose-600" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Inventory by Location */}
+      <div className="grid grid-cols-1 gap-8">
+        {/* Inventory Aging Analysis */}
         <div className="bg-white p-6 rounded-2xl border-2 border-blue-500 shadow-lg">
           <div className="flex items-center gap-2 mb-6 bg-blue-600 p-3 rounded-xl shadow-md">
-            <MapPin className="w-5 h-5 text-white" />
-            <h2 className="text-lg font-bold text-white tracking-tight">Tồn kho theo Zone</h2>
+            <BarChart3 className="w-5 h-5 text-white" />
+            <h2 className="text-lg font-bold text-white tracking-tight">Phân tích tuổi hàng tồn kho (Aging)</h2>
           </div>
-          <div className="h-80 w-full">
+          <div className="h-96 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={locationData}>
+              <BarChart data={agingData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -267,83 +252,56 @@ export default function Dashboard() {
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                   cursor={{ fill: '#f8fafc' }}
                 />
-                <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                <Bar dataKey="quantity" name="Số lượng thùng" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={60} />
+                <Bar dataKey="sos" name="Số lượng SO" fill="#10b981" radius={[4, 4, 0, 0]} barSize={60} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Inventory by Customer */}
-        <div className="bg-white p-6 rounded-2xl border-2 border-emerald-500 shadow-lg">
-          <div className="flex items-center gap-2 mb-6 bg-emerald-600 p-3 rounded-xl shadow-md">
-            <PieChartIcon className="w-5 h-5 text-white" />
-            <h2 className="text-lg font-bold text-white tracking-tight">Tồn theo khách hàng</h2>
-          </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={customerData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {customerData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            {customerData.map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                <span className="text-xs text-slate-600 truncate">{entry.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* Slow Moving Items Table */}
+      {/* Slow Moving SOs Table */}
       <div className="bg-white p-6 rounded-2xl border-2 border-rose-500 shadow-lg">
         <div className="flex items-center gap-2 mb-6 bg-rose-600 p-3 rounded-xl shadow-md">
           <AlertTriangle className="w-5 h-5 text-white" />
-          <h2 className="text-lg font-bold text-white tracking-tight">Hàng chậm luân chuyển (Trên 30 ngày)</h2>
+          <h2 className="text-lg font-bold text-white tracking-tight">Chi tiết SO chậm luân chuyển (Trên 30 ngày)</h2>
         </div>
         <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50">
-                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Mã QR</th>
-                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Hàng hóa</th>
-                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Vị trí</th>
-                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-center">Số lượng</th>
-                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Cập nhật cuối</th>
+                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Đơn hàng SO</th>
+                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Sản phẩm tiêu biểu</th>
+                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-center">Tổng số lượng</th>
+                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-center">Số ngày tồn</th>
+                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Ngày nhập sớm nhất</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {slowMoving.length === 0 ? (
+              {slowMovingSOs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm italic">
-                    Không có hàng chậm luân chuyển
+                    Không có đơn hàng SO chậm luân chuyển
                   </td>
                 </tr>
               ) : (
-                slowMoving.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-xs font-mono text-slate-500">{item.qr_code}</td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-900">{item.rpro || item.so}</td>
-                    <td className="px-4 py-3 text-xs text-blue-600 font-bold">{item.location_full_path}</td>
+                slowMovingSOs.map(item => (
+                  <tr key={item.so} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-sm font-bold text-blue-600">{item.so}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{item.lastItem?.rpro || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-center font-bold">{item.quantity}</td>
-                    <td className="px-4 py-3 text-xs text-slate-400 text-right">{new Date(item.last_updated).toLocaleDateString('vi-VN')}</td>
+                    <td className="px-4 py-3 text-sm text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                        item.age > 90 ? 'bg-rose-100 text-rose-600' : 
+                        item.age > 60 ? 'bg-orange-100 text-orange-600' : 
+                        'bg-amber-100 text-amber-600'
+                      }`}>
+                        {item.age} ngày
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 text-right">
+                      {new Date(item.lastItem?.last_updated).toLocaleDateString('vi-VN')}
+                    </td>
                   </tr>
                 ))
               )}

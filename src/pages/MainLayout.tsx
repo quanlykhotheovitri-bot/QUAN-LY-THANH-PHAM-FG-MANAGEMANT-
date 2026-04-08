@@ -5,14 +5,16 @@ import {
   PackagePlus, 
   PackageMinus, 
   PackageSearch, 
-  History, 
+  History as HistoryIcon, 
   Settings, 
   LogOut, 
   Menu, 
   X,
   Warehouse,
   ArrowLeftRight,
-  ClipboardList
+  ClipboardList,
+  Box,
+  FlaskConical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './Dashboard';
@@ -23,8 +25,10 @@ import HistoryLog from './HistoryLog';
 import SettingsPage from './SettingsPage';
 import Transfer from './Transfer';
 import InventoryCheck from './InventoryCheck';
+import PlasticBins from './PlasticBins';
+import Samples from './Samples';
 
-type Tab = 'dashboard' | 'inbound' | 'outbound' | 'inventory' | 'transfer' | 'check' | 'history' | 'settings';
+type Tab = 'dashboard' | 'inbound' | 'outbound' | 'inventory' | 'transfer' | 'check' | 'history' | 'settings' | 'plastic-bins' | 'samples';
 
 export default function MainLayout() {
   const { user, signOut } = useAuth();
@@ -38,7 +42,9 @@ export default function MainLayout() {
     { id: 'transfer', label: 'Chuyển vị trí', icon: ArrowLeftRight, roles: ['admin'] },
     { id: 'check', label: 'Kiểm kê', icon: ClipboardList, roles: ['admin'] },
     { id: 'inventory', label: 'Tồn kho', icon: PackageSearch, roles: ['admin'] },
-    { id: 'history', label: 'Lịch sử', icon: History, roles: ['admin'] },
+    { id: 'plastic-bins', label: 'Thùng nhựa', icon: Box, roles: ['admin', 'user'] },
+    { id: 'samples', label: 'Sample', icon: FlaskConical, roles: ['admin', 'user'] },
+    { id: 'history', label: 'Lịch sử', icon: HistoryIcon, roles: ['admin'] },
     { id: 'settings', label: 'Cài đặt', icon: Settings, roles: ['admin'] },
   ];
 
@@ -59,6 +65,8 @@ export default function MainLayout() {
       case 'inventory': return <Inventory />;
       case 'transfer': return <Transfer />;
       case 'check': return <InventoryCheck />;
+      case 'plastic-bins': return <PlasticBins />;
+      case 'samples': return <Samples />;
       case 'history': return <HistoryLog />;
       case 'settings': return <SettingsPage />;
       default: return user?.role === 'admin' ? <Dashboard /> : <Inbound />;

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { 
-  History, 
+  History as HistoryIcon, 
   Search, 
   Filter, 
   Calendar,
@@ -167,7 +167,7 @@ export default function HistoryLog() {
       case 'INBOUND': return <ArrowDownLeft className="w-4 h-4" />;
       case 'OUTBOUND': return <ArrowUpRight className="w-4 h-4" />;
       case 'TRANSFER': return <RefreshCw className="w-4 h-4" />;
-      default: return <History className="w-4 h-4" />;
+      default: return <HistoryIcon className="w-4 h-4" />;
     }
   };
 
@@ -176,7 +176,7 @@ export default function HistoryLog() {
       <div className="bg-white p-6 rounded-2xl border-2 border-blue-500 shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-3 bg-blue-600 p-3 rounded-xl shadow-md">
-            <History className="w-6 h-6 text-white" />
+            <HistoryIcon className="w-6 h-6 text-white" />
             <div>
               <h1 className="text-2xl font-black text-white tracking-tight leading-none">Lịch sử & Dữ liệu</h1>
               <p className="text-blue-100 text-[10px] uppercase font-bold tracking-widest mt-1">Truy vết mọi biến động và dữ liệu nhập kho</p>
@@ -211,7 +211,7 @@ export default function HistoryLog() {
         <div className={`p-4 rounded-xl flex items-center gap-3 shadow-lg border-2 ${
           message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
         }`}>
-          <History className="w-5 h-5" />
+          <HistoryIcon className="w-5 h-5" />
           <p className="text-sm font-black uppercase tracking-wider">{message.text}</p>
           <button onClick={() => setMessage(null)} className="ml-auto text-xs font-black bg-white px-3 py-1 rounded-lg shadow-sm border border-slate-200">ĐÓNG</button>
         </div>

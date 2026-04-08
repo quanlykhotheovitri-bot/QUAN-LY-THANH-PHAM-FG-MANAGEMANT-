@@ -14,7 +14,8 @@ import {
   Hash,
   Download,
   Upload,
-  Settings
+  Settings,
+  History as HistoryIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, SourceImportLine } from '../types';
@@ -346,18 +347,28 @@ export default function Inbound() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex p-1 bg-slate-100 rounded-2xl w-fit border border-slate-200">
           <button 
             onClick={() => setActiveTab('scan')}
-            className={`text-2xl font-bold transition-all ${activeTab === 'scan' ? 'text-slate-900 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'scan' 
+                ? 'bg-white text-blue-600 shadow-sm border border-blue-100' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
           >
+            <Scan className="w-4 h-4" />
             Nhập kho hàng hóa
           </button>
           {authUser?.role === 'admin' && (
             <button 
               onClick={() => setActiveTab('history')}
-              className={`text-2xl font-bold transition-all ${activeTab === 'history' ? 'text-slate-900 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'history' 
+                  ? 'bg-white text-blue-600 shadow-sm border border-blue-100' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
+              <HistoryIcon className="w-4 h-4" />
               DATA NHẬP KHO
             </button>
           )}

@@ -13,7 +13,7 @@ import {
   Search,
   AlertTriangle,
   FileText,
-  History,
+  History as HistoryIcon,
   Upload,
   Download,
   Filter,
@@ -985,16 +985,65 @@ export default function Outbound() {
     });
 
     // Convert to array of groups and sort each group by location
+    const specialPrefixes = ['Logo', 'vai', 'pu', 'fb'];
+    const isSpecial = (loc: string) => {
+      if (!loc || loc === 'N/A') return false;
+      const l = loc.toLowerCase();
+      return specialPrefixes.some(p => l.startsWith(p.toLowerCase()));
+    };
+
     const sortedGroups = Array.from(plGroups.entries()).map(([plNo, items]) => {
-      return {
-        plNo,
-        items: items.sort((a, b) => a.location.localeCompare(b.location))
-      };
+      const sortedItems = items.sort((a, b) => a.location.localeCompare(b.location));
+      const regular = sortedItems.filter(item => !isSpecial(item.location));
+      const special = sortedItems.filter(item => isSpecial(item.location));
+      return { plNo, regular, special };
     }).sort((a, b) => a.plNo.localeCompare(b.plNo));
 
     // Create print window
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
+
+    const renderTable = (items: any[], titleSuffix: string = "") => {
+      if (items.length === 0) return "";
+      return `
+        ${titleSuffix ? `<h3 style="color: #e67e22; margin-top: 20px; font-size: 14px; text-align: left; border-bottom: 2px solid #e67e22; padding-bottom: 5px;">DANH SÁCH ${titleSuffix}</h3>` : ''}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">STT</th>
+              <th>PL No</th>
+              <th style="white-space: nowrap;">OVN Order No</th>
+              <th style="white-space: nowrap;">RPRO</th>
+              <th>Khách Hàng</th>
+              <th style="text-align: center;">Total Box</th>
+              <th>Location</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item, index) => `
+              <tr>
+                <td style="text-align: center;">${index + 1}</td>
+                <td style="font-weight: bold;">${item.plNo || 'N/A'}</td>
+                <td style="font-weight: bold; white-space: nowrap;">${item.so || 'N/A'}</td>
+                <td style="color: #e67e22; font-weight: bold; white-space: nowrap;">${item.rpro || ''}</td>
+                <td style="font-size: 10px;">${item.kh || 'N/A'}</td>
+                <td style="text-align: center; font-weight: bold;">${item.totalBoxes}</td>
+                <td class="location-tag">${item.location}</td>
+                <td></td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background-color: #f8f9fa; font-weight: bold;">
+              <td colspan="5" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
+              <td style="text-align: center; font-size: 12px;">${items.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    };
 
     const html = `
       <html>
@@ -1004,11 +1053,11 @@ export default function Outbound() {
             body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
             .pl-section { page-break-after: always; margin-bottom: 40px; }
             .pl-section:last-child { page-break-after: auto; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; font-size: 11px; }
             th { background-color: #f8f9fa; font-weight: bold; text-transform: uppercase; }
             h2 { text-align: center; color: #002060; margin-bottom: 5px; }
-            .header-info { margin-bottom: 15px; font-size: 11px; color: #666; display: flex; justify-content: space-between; }
+            .header-info { margin-bottom: 10px; font-size: 11px; color: #666; display: flex; justify-content: space-between; }
             .footer { margin-top: 20px; font-size: 10px; text-align: right; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
             .location-tag { background-color: #fff9f0; font-weight: bold; }
             @media print {
@@ -1024,46 +1073,12 @@ export default function Outbound() {
               <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
               <div class="header-info">
                 <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
-                <span>Số dòng: ${group.items.length}</span>
+                <span>Tổng số dòng: ${group.regular.length + group.special.length}</span>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th style="width: 30px; text-align: center;">STT</th>
-                    <th>PL No</th>
-                    <th style="white-space: nowrap;">OVN Order No</th>
-                    <th style="white-space: nowrap;">RPRO</th>
-                    <th>Khách Hàng</th>
-                    <th style="text-align: center;">Total Box</th>
-                    <th style="text-align: center;">Scan Xuất</th>
-                    <th>Location</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${group.items.map((item, index) => `
-                    <tr>
-                      <td style="text-align: center;">${index + 1}</td>
-                      <td style="font-weight: bold;">${item.plNo || 'N/A'}</td>
-                      <td style="font-weight: bold; white-space: nowrap;">${item.so || 'N/A'}</td>
-                      <td style="color: #e67e22; font-weight: bold; white-space: nowrap;">${item.rpro || ''}</td>
-                      <td style="font-size: 10px;">${item.kh || 'N/A'}</td>
-                      <td style="text-align: center; font-weight: bold;">${item.totalBoxes}</td>
-                      <td style="text-align: center; color: #3498db; font-weight: bold;">${item.scanCount}</td>
-                      <td class="location-tag">${item.location}</td>
-                      <td></td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr style="background-color: #f8f9fa; font-weight: bold;">
-                    <td colspan="5" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
-                    <td style="text-align: center; font-size: 12px;">${group.items.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
-                    <td style="text-align: center; font-size: 12px; color: #3498db;">${group.items.reduce((sum, item) => sum + (item.scanCount || 0), 0)}</td>
-                    <td colspan="2"></td>
-                  </tr>
-                </tfoot>
-              </table>
+              
+              ${renderTable(group.regular)}
+              ${renderTable(group.special, "HÀNG LOGO/VẢI/PU/FB")}
+
               <div class="footer">Hệ thống Quản lý Kho - Trang ${gIdx + 1}/${sortedGroups.length}</div>
             </div>
           `).join('')}
@@ -1085,14 +1100,19 @@ export default function Outbound() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Xuất kho hàng hóa</h1>
-          <p className="text-slate-500">Quản lý quy trình xuất kho và đối chiếu</p>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 w-full md:w-auto">
+          <div className="p-3 bg-orange-100 rounded-xl">
+            <Package className="w-6 h-6 text-orange-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 leading-none">Xuất kho hàng hóa</h1>
+            <p className="text-slate-500 text-sm mt-1">Quản lý quy trình xuất kho và đối chiếu</p>
+          </div>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex p-1 bg-slate-100 rounded-2xl w-fit">
+      <div className="flex p-1 bg-slate-100 rounded-2xl w-fit border border-slate-200">
         <button
           onClick={() => setActiveTab('scan')}
           className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -1119,7 +1139,7 @@ export default function Outbound() {
                 activeTab === 'data' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              <History className="w-4 h-4" />
+              <HistoryIcon className="w-4 h-4" />
               Data xuất
             </button>
           </>
@@ -1497,7 +1517,7 @@ export default function Outbound() {
                 {plItems.length === 0 ? (
                   <div className="p-20 text-center">
                     <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
-                      <History className="w-10 h-10 text-slate-200" />
+                      <HistoryIcon className="w-10 h-10 text-slate-200" />
                     </div>
                     <p className="text-slate-400 italic text-sm">Chưa có dữ liệu Packing List được nạp</p>
                     <p className="text-slate-300 text-xs mt-1">Hãy tải file nguồn và thực hiện "Sao chép & Dán"</p>

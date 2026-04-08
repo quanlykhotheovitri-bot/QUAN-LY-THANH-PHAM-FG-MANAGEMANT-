@@ -46,3 +46,20 @@ export interface UserProfile {
   user_id: string;
   role: UserRole;
 }
+
+export interface PlasticBinCustomer {
+  id: string;
+  code: string;
+  name: string;
+  created_at?: string;
+}
+
+export interface PlasticBinReturn {
+  id: string;
+  return_date: string;
+  qrcode: string;
+  customer_name: string;
+  bin_type: string;
+  quantity: number;
+  created_at?: string;
+}

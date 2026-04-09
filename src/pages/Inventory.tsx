@@ -29,6 +29,8 @@ export default function Inventory() {
   const pageSize = 50;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
@@ -140,67 +142,117 @@ export default function Inventory() {
     }
   };
 
+  const deleteAllInventory = async () => {
+    if (!window.confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TỒN KHO? Hành động này không thể hoàn tác.')) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('inventory_balances')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+        
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
+      fetchInventory();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleImportExcel = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
+    setImportProgress(null);
     try {
       const reader = new FileReader();
       reader.onload = async (evt) => {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws) as any[];
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws) as any[];
 
-        const itemsToInsert = data.map(row => {
-          // Map headers: QRCODE, SO, RPRO, LOẠI THÙNG, SỐ THÙNG ĐƠN HÀNG, VỊ TRÍ, NGÀY NHẬP
-          const so = row['SO'] || row['so'] || '';
-          const rpro = row['RPRO'] || row['rpro'] || '';
-          const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
-          const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
-          const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
-          const qrCodeFromExcel = row['QRCODE'] || row['qrcode'] || row['qr_code'];
-          
-          let quantity = 0;
-          let totalBoxes = 0;
-          const qtyStr = String(row['SỐ THÙNG ĐƠN HÀNG'] || row['số thùng đơn hàng'] || row['items_count'] || '0');
-          if (qtyStr.includes('/')) {
-            const parts = qtyStr.split('/');
-            quantity = parseInt(parts[0].trim()) || 0;
-            totalBoxes = parseInt(parts[1].trim()) || 0;
-          } else {
-            quantity = parseInt(qtyStr) || 0;
-            totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
+          const totalItems = data.length;
+          if (totalItems === 0) {
+            setMessage({ type: 'error', text: 'File Excel không có dữ liệu.' });
+            setLoading(false);
+            return;
           }
 
-          return {
-            so,
-            rpro,
-            kh,
-            box_type: boxType,
-            location_path: location,
-            quantity,
-            total_boxes: totalBoxes,
-            qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
-            last_updated: new Date().toISOString()
-          };
-        });
+          setImportProgress({ current: 0, total: totalItems });
 
-        if (itemsToInsert.length > 0) {
-          const { error } = await supabase.from('inventory_balances').insert(itemsToInsert);
-          if (error) throw error;
-          setMessage({ type: 'success', text: `Đã nhập ${itemsToInsert.length} mục tồn kho thành công.` });
+          const itemsToInsert = data.map(row => {
+            const so = row['SO'] || row['so'] || '';
+            const rpro = row['RPRO'] || row['rpro'] || '';
+            const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
+            const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
+            const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
+            const qrCodeFromExcel = row['QRCODE'] || row['qrcode'] || row['qr_code'];
+            
+            let quantity = 0;
+            let totalBoxes = 0;
+            const qtyStr = String(row['SỐ THÙNG ĐƠN HÀNG'] || row['số thùng đơn hàng'] || row['items_count'] || '0');
+            if (qtyStr.includes('/')) {
+              const parts = qtyStr.split('/');
+              quantity = parseInt(parts[0].trim()) || 0;
+              totalBoxes = parseInt(parts[1].trim()) || 0;
+            } else {
+              quantity = parseInt(qtyStr) || 0;
+              totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
+            }
+
+            return {
+              so,
+              rpro,
+              kh,
+              box_type: boxType,
+              location_path: location,
+              quantity,
+              total_boxes: totalBoxes,
+              qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
+              last_updated: new Date().toISOString()
+            };
+          });
+
+          // Chunking inserts
+          const chunkSize = 1000;
+          let successCount = 0;
+
+          for (let i = 0; i < itemsToInsert.length; i += chunkSize) {
+            const chunk = itemsToInsert.slice(i, i + chunkSize);
+            const { error } = await supabase.from('inventory_balances').insert(chunk);
+            
+            if (error) {
+              console.error('Error inserting chunk:', error);
+              throw new Error(`Lỗi tại dòng ${i + 1}: ${error.message}`);
+            }
+            
+            successCount += chunk.length;
+            setImportProgress({ current: successCount, total: totalItems });
+          }
+
+          setMessage({ type: 'success', text: `Đã nhập thành công ${successCount} / ${totalItems} mục tồn kho.` });
           fetchInventory();
+        } catch (error: any) {
+          console.error('Import error:', error);
+          setMessage({ type: 'error', text: 'Lỗi khi nhập: ' + error.message });
+        } finally {
+          setLoading(false);
+          setImportProgress(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
         }
       };
       reader.readAsBinaryString(file);
     } catch (error: any) {
-      setMessage({ type: 'error', text: 'Lỗi khi nhập: ' + error.message });
-    } finally {
+      setMessage({ type: 'error', text: 'Lỗi khi đọc file: ' + error.message });
       setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -316,6 +368,15 @@ export default function Inventory() {
             className="hidden" 
             accept=".xlsx, .xls"
           />
+          {isAdmin && (
+            <button
+              onClick={deleteAllInventory}
+              className="flex items-center gap-2 px-6 py-3 bg-rose-600 text-white rounded-xl font-black hover:bg-rose-700 transition-all shadow-lg active:scale-95"
+            >
+              <Trash2 className="w-5 h-5" />
+              XÓA TẤT CẢ
+            </button>
+          )}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"
@@ -334,6 +395,21 @@ export default function Inventory() {
       </div>
 
       <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+        {importProgress && (
+          <div className="bg-blue-50 p-4 border-b border-blue-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-blue-700 uppercase tracking-wider">Đang nhập dữ liệu...</span>
+              <span className="text-sm font-bold text-blue-700">{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+            </div>
+            <div className="w-full bg-blue-200 rounded-full h-2.5">
+              <div 
+                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              ></div>
+            </div>
+            <p className="text-[10px] text-blue-500 mt-1 font-bold">Đã xử lý: {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} dòng</p>
+          </div>
+        )}
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 min-w-[300px]">

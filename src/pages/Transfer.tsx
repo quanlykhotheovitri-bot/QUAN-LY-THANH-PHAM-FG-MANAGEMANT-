@@ -112,7 +112,7 @@ export default function Transfer() {
     setIsScanning(false);
   };
 
-  const processSingleQR = async (qrData: string) => {
+  const processSingleQR = async (qrData: string, targetLocation?: string) => {
     const parsed = parseQRCode(qrData);
     
     if (scannedItems.some(item => item.qrCode === parsed.qrCode)) {
@@ -136,7 +136,7 @@ export default function Transfer() {
       id: inventoryItem.id,
       kh: inventoryItem.kh,
       fromLocation: inventoryItem.location_path,
-      toLocation: matchedLocation?.full_path || locationInput,
+      toLocation: targetLocation || matchedLocation?.full_path || locationInput,
       quantity: inventoryItem.quantity,
       boxType: inventoryItem.box_type
     };
@@ -156,9 +156,11 @@ export default function Transfer() {
         const trimmedLine = line.trim();
         if (!trimmedLine.includes('|')) {
           currentLocation = trimmedLine;
+          // If we find a location, we can also update the main location input if it's empty
+          if (!locationInput) setLocationInput(currentLocation);
           continue;
         }
-        await processSingleQR(trimmedLine);
+        await processSingleQR(trimmedLine, currentLocation);
       }
       setManualQR('');
       setLoading(false);
@@ -413,95 +415,109 @@ export default function Transfer() {
               )}
             </div>
 
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden flex flex-col h-[calc(100vh-280px)]">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <h2 className="font-black text-slate-900 uppercase tracking-tight">Danh sách chuyển ({scannedItems.length})</h2>
-                    {selectedScanned.size > 0 && (
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-blue-100 flex items-center justify-between bg-blue-600 shadow-md">
+                  <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsScanning(!isScanning)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm transition-all ${
+                        isScanning ? 'bg-rose-600 text-white' : 'bg-white text-blue-600 shadow-md'
+                      }`}
+                    >
+                      <Scan className="w-4 h-4" />
+                      {isScanning ? 'DỪNG QUÉT' : 'QUÉT MÃ'}
+                    </button>
+                    {isAdmin && selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-black hover:bg-rose-100 transition-all"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white/20 text-white rounded-lg text-xs font-black hover:bg-white/30 transition-all"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         XÓA ĐÃ CHỌN ({selectedScanned.size})
                       </button>
                     )}
+                    {scannedItems.length > 0 && (
+                      <button
+                        onClick={confirmTransfer}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-blue-600 rounded-xl text-sm font-black hover:bg-blue-50 transition-all disabled:opacity-50 shadow-md"
+                      >
+                        <Save className="w-4 h-4" />
+                        XÁC NHẬN CHUYỂN
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button 
+                        onClick={() => setScannedItems([])}
+                        className="p-2 text-white/70 hover:text-white transition-colors"
+                        title="Xóa tất cả"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={() => setIsScanning(!isScanning)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm transition-all ${
-                      isScanning ? 'bg-rose-600 text-white' : 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                    }`}
-                  >
-                    <Scan className="w-4 h-4" />
-                    {isScanning ? 'DỪNG QUÉT' : 'QUÉT MÃ'}
-                  </button>
                 </div>
 
-                <div className="flex-1 overflow-auto">
+                <div className="overflow-x-auto">
                   {scannedItems.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 p-12">
-                      <Package className="w-16 h-16 mb-4 opacity-20" />
-                      <p className="font-black uppercase tracking-widest">Chưa có kiện hàng nào</p>
+                    <div className="p-12 text-center">
+                      <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-400">Chưa có kiện hàng nào được scan</p>
                     </div>
                   ) : (
-                    <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 z-10 bg-white shadow-sm">
-                        <tr className="bg-slate-50 text-slate-500">
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 w-10">
-                            <input 
-                              type="checkbox" 
-                              checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
-                              onChange={toggleSelectAllScanned}
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
+                    <table className="w-full text-left border-collapse border border-slate-200">
+                      <thead>
+                        <tr className="bg-[#002060] text-white">
+                          <th className="px-2 py-3 border border-slate-300 text-center">
+                            {isAdmin && (
+                              <input 
+                                type="checkbox" 
+                                checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
+                                onChange={toggleSelectAllScanned}
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            )}
                           </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">THÔNG TIN KIỆN HÀNG</th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 text-center">VỊ TRÍ CŨ</th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 text-center"></th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 text-center">VỊ TRÍ MỚI</th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 text-center">THAO TÁC</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ CŨ</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ MỚI</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ LƯỢNG</th>
+                          <th className="px-2 py-3 border border-slate-300"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {scannedItems.map((item, index) => (
-                          <tr key={item.qrCode} className="hover:bg-slate-50 transition-colors group">
-                            <td className="px-4 py-3">
-                              <input 
-                                type="checkbox" 
-                                checked={selectedScanned.has(item.qrCode)}
-                                onChange={() => toggleSelectScanned(item.qrCode)}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
+                          <tr 
+                            key={item.qrCode} 
+                            className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''}`}
+                          >
+                            <td className="px-2 py-3 border border-slate-200 text-center">
+                              {isAdmin && (
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedScanned.has(item.qrCode)}
+                                  onChange={() => toggleSelectScanned(item.qrCode)}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              )}
                             </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 font-bold text-xs">
-                                  {scannedItems.length - index}
-                                </div>
-                                <div>
-                                  <div className="font-black text-slate-900 text-sm">{item.rpro || item.so}</div>
-                                  <div className="text-[10px] text-slate-400 font-mono">{item.qrCode}</div>
-                                </div>
-                              </div>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qrCode}</td>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                              <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded">{item.fromLocation}</span>
                             </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] font-black">
-                                {item.fromLocation}
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                              <span className={`px-2 py-1 rounded font-bold ${item.toLocation ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-400 italic'}`}>
+                                {item.toLocation || 'Chưa có'}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-center">
-                              <ArrowRight className="w-4 h-4 text-slate-300 mx-auto" />
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={`px-2 py-1 rounded text-[10px] font-black ${
-                                item.toLocation ? 'bg-blue-100 text-blue-700' : 'bg-rose-50 text-rose-400 italic'
-                              }`}>
-                                {item.toLocation || 'CHƯA CÓ'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.quantity}</td>
+                            <td className="px-2 py-3 border border-slate-200 text-center">
                               <button 
                                 onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
                                 className="p-1 text-slate-300 hover:text-rose-500 transition-colors"

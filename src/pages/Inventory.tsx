@@ -26,7 +26,7 @@ export default function Inventory() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(200);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
@@ -146,18 +146,78 @@ export default function Inventory() {
     if (!window.confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TỒN KHO? Hành động này không thể hoàn tác.')) return;
 
     setLoading(true);
+    setMessage({ type: 'success', text: 'Đang bắt đầu quá trình xóa toàn bộ dữ liệu...' });
+    
     try {
-      const { error } = await supabase
+      // Method 1: Try bulk delete first (fastest)
+      // Some Supabase projects allow this if RLS is configured to allow unbounded deletes
+      const { error: bulkError } = await supabase
         .from('inventory_balances')
         .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-        
-      if (error) throw error;
+        .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
+      if (!bulkError) {
+        setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
+        setInventory([]);
+        setTotalCount(0);
+        setSelectedItems(new Set());
+        return;
+      }
+
+      // Method 2: Fallback to batch deletion if bulk delete is restricted or times out
+      console.warn('Bulk delete failed or restricted, falling back to batch deletion...', bulkError);
+      
+      let totalDeleted = 0;
+      let hasMore = true;
+      let batchCount = 0;
+
+      while (hasMore) {
+        // Fetch a batch of IDs to delete
+        const { data, error: fetchError } = await supabase
+          .from('inventory_balances')
+          .select('id')
+          .limit(2000); // Increased batch size for speed
+
+        if (fetchError) throw fetchError;
+        
+        if (!data || data.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        const ids = data.map(item => item.id);
+        const { error: deleteError } = await supabase
+          .from('inventory_balances')
+          .delete()
+          .in('id', ids);
+
+        if (deleteError) throw deleteError;
+        
+        totalDeleted += ids.length;
+        batchCount++;
+        
+        // Update progress message
+        setMessage({ type: 'success', text: `Đang xóa dữ liệu... Đã xóa ${totalDeleted.toLocaleString()} mục.` });
+        
+        // Safety break to prevent infinite loop
+        if (batchCount > 200) { // Max 400,000 items
+          break;
+        }
+      }
+
+      setMessage({ 
+        type: 'success', 
+        text: totalDeleted > 0 
+          ? `Đã xóa toàn bộ tồn kho thành công (${totalDeleted.toLocaleString()} mục).` 
+          : 'Kho đã trống, không có gì để xóa.' 
+      });
+      setInventory([]);
+      setTotalCount(0);
+      setSelectedItems(new Set());
       fetchInventory();
     } catch (error: any) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
+      console.error('Delete all error:', error);
+      setMessage({ type: 'error', text: 'Lỗi khi xóa toàn bộ: ' + error.message });
     } finally {
       setLoading(false);
     }
@@ -221,13 +281,25 @@ export default function Inventory() {
             };
           });
 
+          // Deduplicate by qr_code to avoid "ON CONFLICT DO UPDATE command cannot affect row a second time"
+          const uniqueItemsMap = new Map();
+          itemsToInsert.forEach(item => {
+            uniqueItemsMap.set(item.qr_code, item);
+          });
+          const uniqueItemsToInsert = Array.from(uniqueItemsMap.values());
+          const totalUnique = uniqueItemsToInsert.length;
+
+          setImportProgress({ current: 0, total: totalUnique });
+
           // Chunking inserts
           const chunkSize = 1000;
           let successCount = 0;
 
-          for (let i = 0; i < itemsToInsert.length; i += chunkSize) {
-            const chunk = itemsToInsert.slice(i, i + chunkSize);
-            const { error } = await supabase.from('inventory_balances').insert(chunk);
+          for (let i = 0; i < uniqueItemsToInsert.length; i += chunkSize) {
+            const chunk = uniqueItemsToInsert.slice(i, i + chunkSize);
+            const { error } = await supabase
+              .from('inventory_balances')
+              .upsert(chunk, { onConflict: 'qr_code' });
             
             if (error) {
               console.error('Error inserting chunk:', error);
@@ -235,10 +307,10 @@ export default function Inventory() {
             }
             
             successCount += chunk.length;
-            setImportProgress({ current: successCount, total: totalItems });
+            setImportProgress({ current: successCount, total: totalUnique });
           }
 
-          setMessage({ type: 'success', text: `Đã nhập thành công ${successCount} / ${totalItems} mục tồn kho.` });
+          setMessage({ type: 'success', text: `Đã nhập thành công ${successCount} / ${totalUnique} mục tồn kho (đã lọc trùng).` });
           fetchInventory();
         } catch (error: any) {
           console.error('Import error:', error);
@@ -298,9 +370,29 @@ export default function Inventory() {
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const PaginationUI = () => (
-    <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
-      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-        Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong {totalCount}
+    <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200 gap-4">
+      <div className="flex items-center gap-4">
+        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong {totalCount}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Số dòng:</span>
+          <select 
+            value={pageSize} 
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="text-xs font-bold bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-blue-400"
+          >
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+            <option value={1000}>1000</option>
+            <option value={5000}>5000 (Chậm)</option>
+          </select>
+        </div>
       </div>
       <div className="flex gap-2">
         <button

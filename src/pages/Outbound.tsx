@@ -1216,7 +1216,7 @@ export default function Outbound() {
                     />
                     <button
                       onClick={handleProcessManual}
-                      className="w-full mt-4 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black transition-all shadow-lg active:scale-95"
+                      className="w-full mt-4 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black transition-all shadow-lg active:scale-95"
                     >
                       XỬ LÝ MÃ
                     </button>

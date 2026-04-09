@@ -459,7 +459,7 @@ export default function Inbound() {
                     />
                     <button
                       onClick={handleProcessManual}
-                      className="w-full mt-2 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg text-sm font-bold transition-all"
+                      className="w-full mt-2 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-all shadow-md"
                     >
                       Xử lý mã
                     </button>

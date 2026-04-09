@@ -26,6 +26,13 @@ export default function HistoryLog() {
   const [filter, setFilter] = useState('ALL');
   const [activeView, setActiveView] = useState<'movements' | 'inbound'>('movements');
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 50;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, activeView, searchTerm]);
 
   useEffect(() => {
     if (activeView === 'movements') {
@@ -33,34 +40,53 @@ export default function HistoryLog() {
     } else {
       fetchInboundData();
     }
-  }, [filter, activeView]);
+  }, [filter, activeView, currentPage, searchTerm]);
 
   async function fetchLogs() {
     setLoading(true);
+    const from = (currentPage - 1) * pageSize;
+    const to = from + pageSize - 1;
+
     let query = supabase
       .from('inventory_movements')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
+      .select('*', { count: 'exact' });
 
     if (filter !== 'ALL') {
       query = query.eq('type', filter);
     }
 
-    const { data } = await query;
+    if (searchTerm) {
+      query = query.ilike('qr_code', `%${searchTerm}%`);
+    }
+
+    const { data, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
     if (data) setLogs(data);
+    if (count !== null) setTotalCount(count);
     setLoading(false);
   }
 
   async function fetchInboundData() {
     setLoading(true);
-    const { data } = await supabase
+    const from = (currentPage - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase
       .from('inbound_transactions')
-      .select('*')
+      .select('*', { count: 'exact' });
+
+    if (searchTerm) {
+      query = query.or(`qr_code.ilike.%${searchTerm}%,so.ilike.%${searchTerm}%,rpro.ilike.%${searchTerm}%`);
+    }
+
+    const { data, count } = await query
       .order('created_at', { ascending: false })
-      .limit(100);
+      .range(from, to);
     
     if (data) setInboundData(data);
+    if (count !== null) setTotalCount(count);
     setLoading(false);
   }
 
@@ -180,14 +206,37 @@ export default function HistoryLog() {
     setLoading(false);
   };
 
-  const filteredLogs = logs.filter(log => 
-    log.qr_code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLogs = logs;
 
-  const filteredInbound = inboundData.filter(item => 
-    item.qr_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.so && item.so.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.rpro && item.rpro.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredInbound = inboundData;
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const PaginationUI = () => (
+    <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
+      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+        Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong tổng số {totalCount} bản ghi
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+        >
+          TRƯỚC
+        </button>
+        <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
+          TRANG {currentPage} / {totalPages || 1}
+        </div>
+        <button
+          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages || totalPages === 0}
+          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+        >
+          SAU
+        </button>
+      </div>
+    </div>
   );
 
   const getTypeStyle = (type: string) => {
@@ -402,6 +451,7 @@ export default function HistoryLog() {
                 </tbody>
               </table>
             </div>
+            <PaginationUI />
           </div>
         </div>
       ) : (
@@ -537,6 +587,7 @@ export default function HistoryLog() {
               </tbody>
             </table>
           </div>
+          <PaginationUI />
         </div>
       </div>
     )}

@@ -32,7 +32,14 @@ export default function Outbound() {
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
-  const [scannedItems, setScannedItems] = useState<any[]>([]);
+  const [scannedItems, setScannedItems] = useState<any[]>(() => {
+    const saved = localStorage.getItem('outbound_scanned_items');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('outbound_scanned_items', JSON.stringify(scannedItems));
+  }, [scannedItems]);
   const [selectedScanned, setSelectedScanned] = useState<Set<number>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -49,6 +56,9 @@ export default function Outbound() {
   const [outboundData, setOutboundData] = useState<any[]>([]);
   const [selectedOutbound, setSelectedOutbound] = useState<Set<string>>(new Set());
   const [outboundLoading, setOutboundLoading] = useState(false);
+  const [outboundPage, setOutboundPage] = useState(1);
+  const [outboundTotal, setOutboundTotal] = useState(0);
+  const outboundPageSize = 50;
 
   // PL state
   const [plItems, setPlItems] = useState<any[]>([]);
@@ -60,6 +70,10 @@ export default function Outbound() {
   const [dataSubTab, setDataSubTab] = useState<'scan' | 'pl'>('scan');
 
   useEffect(() => {
+    setOutboundPage(1);
+  }, [dataSubTab, activeTab]);
+
+  useEffect(() => {
     fetchLocations();
     fetchInventoryBalances();
     fetchCurrentPLItems();
@@ -67,7 +81,7 @@ export default function Outbound() {
     if (activeTab === 'data') {
       fetchOutboundData();
     }
-  }, [activeTab]);
+  }, [activeTab, outboundPage, dataSubTab]);
 
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
@@ -100,9 +114,7 @@ export default function Outbound() {
     return { rproCounts, soCounts, rproInv, soInv, compositeInv };
   }, [scannedItems, inventoryBalances]);
 
-  const filteredOutbound = useMemo(() => {
-    return outboundData.filter(d => d.type === (dataSubTab === 'scan' ? 'SCAN' : 'PL'));
-  }, [outboundData, dataSubTab]);
+  const filteredOutbound = outboundData;
 
   async function fetchCurrentScannedItems() {
     const { data } = await supabase
@@ -657,13 +669,20 @@ export default function Outbound() {
 
   async function fetchOutboundData() {
     setOutboundLoading(true);
-    const { data, error } = await supabase
+    const from = (outboundPage - 1) * outboundPageSize;
+    const to = from + outboundPageSize - 1;
+
+    const { data, count, error } = await supabase
       .from('outbound_transactions')
-      .select('*')
+      .select('*', { count: 'exact' })
+      .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL')
       .order('created_at', { ascending: false })
-      .limit(500);
+      .range(from, to);
     
-    if (data) setOutboundData(data);
+    if (data) {
+      setOutboundData(data);
+      if (count !== null) setOutboundTotal(count);
+    }
     setOutboundLoading(false);
   }
 
@@ -1796,6 +1815,32 @@ export default function Outbound() {
                     </tbody>
               </table>
             </div>
+            {outboundData.length > 0 && (
+              <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Hiển thị {Math.min(outboundTotal, (outboundPage - 1) * outboundPageSize + 1)}-{Math.min(outboundTotal, outboundPage * outboundPageSize)} trong {outboundTotal}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setOutboundPage(prev => Math.max(1, prev - 1))}
+                    disabled={outboundPage === 1}
+                    className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                  >
+                    TRƯỚC
+                  </button>
+                  <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
+                    TRANG {outboundPage} / {Math.ceil(outboundTotal / outboundPageSize) || 1}
+                  </div>
+                  <button
+                    onClick={() => setOutboundPage(prev => Math.min(Math.ceil(outboundTotal / outboundPageSize), prev + 1))}
+                    disabled={outboundPage === Math.ceil(outboundTotal / outboundPageSize) || outboundTotal === 0}
+                    className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                  >
+                    SAU
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

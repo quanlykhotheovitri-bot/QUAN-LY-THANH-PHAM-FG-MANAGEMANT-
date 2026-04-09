@@ -27,7 +27,14 @@ import { useAuth } from '../contexts/AuthContext';
 export default function Inbound() {
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === 'admin';
-  const [scannedItems, setScannedItems] = useState<any[]>([]);
+  const [scannedItems, setScannedItems] = useState<any[]>(() => {
+    const saved = localStorage.getItem('inbound_scanned_items');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('inbound_scanned_items', JSON.stringify(scannedItems));
+  }, [scannedItems]);
   const [selectedScanned, setSelectedScanned] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
   const [selectedBoxType, setSelectedBoxType] = useState<'Nhựa' | 'Giấy'>('Nhựa');
@@ -41,6 +48,9 @@ export default function Inbound() {
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const historyPageSize = 50;
 
   useEffect(() => {
     fetchLocations();
@@ -50,7 +60,7 @@ export default function Inbound() {
     if (activeTab === 'history') {
       fetchHistory();
     }
-  }, [activeTab]);
+  }, [activeTab, historyPage]);
 
   const exportHistory = (format: 'xlsx' | 'csv') => {
     const data = historyData.map(item => ({
@@ -73,13 +83,21 @@ export default function Inbound() {
 
   async function fetchHistory() {
     setHistoryLoading(true);
-    const { data, error } = await supabase
+    const from = (historyPage - 1) * historyPageSize;
+    const to = from + historyPageSize - 1;
+
+    const { data, count, error } = await supabase
       .from('inbound_transactions')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(100);
+      .range(from, to);
     
-    if (data) setHistoryData(data);
+    if (error) {
+      setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
+    } else if (data) {
+      setHistoryData(data);
+      if (count !== null) setHistoryTotal(count);
+    }
     setHistoryLoading(false);
   }
 
@@ -724,6 +742,32 @@ export default function Inbound() {
               </table>
             )}
           </div>
+          {historyData.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Hiển thị {Math.min(historyTotal, (historyPage - 1) * historyPageSize + 1)}-{Math.min(historyTotal, historyPage * historyPageSize)} trong {historyTotal}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
+                  disabled={historyPage === 1}
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                >
+                  TRƯỚC
+                </button>
+                <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
+                  TRANG {historyPage} / {Math.ceil(historyTotal / historyPageSize) || 1}
+                </div>
+                <button
+                  onClick={() => setHistoryPage(prev => Math.min(Math.ceil(historyTotal / historyPageSize), prev + 1))}
+                  disabled={historyPage === Math.ceil(historyTotal / historyPageSize) || historyTotal === 0}
+                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                >
+                  SAU
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -24,19 +24,35 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 50;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
     fetchInventory();
-  }, []);
+  }, [currentPage, searchTerm]);
 
   async function fetchInventory() {
     setLoading(true);
-    // Fetch all individual records from inventory_balances
-    const { data, error } = await supabase
+    const from = (currentPage - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase
       .from('inventory_balances')
-      .select('*')
-      .order('last_updated', { ascending: false });
+      .select('*', { count: 'exact' });
+
+    if (searchTerm) {
+      query = query.or(`so.ilike.%${searchTerm}%,rpro.ilike.%${searchTerm}%,kh.ilike.%${searchTerm}%`);
+    }
+
+    const { data, count, error } = await query
+      .order('last_updated', { ascending: false })
+      .range(from, to);
     
     if (error) {
       const errorMsg = error.message.includes('Failed to fetch')
@@ -45,6 +61,7 @@ export default function Inventory() {
       setMessage({ type: 'error', text: 'Lỗi khi tải tồn kho: ' + errorMsg });
     } else if (data) {
       setInventory(data);
+      if (count !== null) setTotalCount(count);
     }
     setLoading(false);
   }
@@ -224,10 +241,35 @@ export default function Inventory() {
     }));
   }, [inventory]);
 
-  const filteredInventory = groupedInventory.filter(item => 
-    (item.rpro && item.rpro.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.so && item.so.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.kh && item.kh.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredInventory = groupedInventory;
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const PaginationUI = () => (
+    <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
+      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+        Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong {totalCount}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+        >
+          TRƯỚC
+        </button>
+        <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
+          TRANG {currentPage} / {totalPages || 1}
+        </div>
+        <button
+          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages || totalPages === 0}
+          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+        >
+          SAU
+        </button>
+      </div>
+    </div>
   );
 
   const exportData = (format: 'xlsx' | 'csv') => {
@@ -408,6 +450,7 @@ export default function Inventory() {
             )}
           </table>
         </div>
+        <PaginationUI />
       </div>
     </div>
   );

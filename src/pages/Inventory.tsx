@@ -146,78 +146,89 @@ export default function Inventory() {
     if (!window.confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TỒN KHO? Hành động này không thể hoàn tác.')) return;
 
     setLoading(true);
-    setMessage({ type: 'success', text: 'Đang bắt đầu quá trình xóa toàn bộ dữ liệu...' });
+    setMessage({ type: 'success', text: 'Đang chuẩn bị xóa dữ liệu...' });
     
     try {
-      // Method 1: Try bulk delete first (fastest)
-      // Some Supabase projects allow this if RLS is configured to allow unbounded deletes
-      const { error: bulkError } = await supabase
-        .from('inventory_balances')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (!bulkError) {
-        setMessage({ type: 'success', text: 'Đã xóa toàn bộ tồn kho thành công.' });
-        setInventory([]);
-        setTotalCount(0);
-        setSelectedItems(new Set());
-        return;
-      }
-
-      // Method 2: Fallback to batch deletion if bulk delete is restricted or times out
-      console.warn('Bulk delete failed or restricted, falling back to batch deletion...', bulkError);
-      
       let totalDeleted = 0;
       let hasMore = true;
-      let batchCount = 0;
+      let consecutiveEmptyBatches = 0;
 
+      // We use a loop to delete in small batches. 
+      // This is the most reliable way to delete large amounts of data in Supabase
+      // without hitting statement timeouts or RLS bulk-delete restrictions.
       while (hasMore) {
-        // Fetch a batch of IDs to delete
+        // 1. Fetch a batch of IDs
         const { data, error: fetchError } = await supabase
           .from('inventory_balances')
           .select('id')
-          .limit(2000); // Increased batch size for speed
+          .limit(500); // Smaller batch size for better reliability
 
-        if (fetchError) throw fetchError;
+        if (fetchError) {
+          throw new Error(`Lỗi truy vấn: ${fetchError.message}`);
+        }
         
         if (!data || data.length === 0) {
-          hasMore = false;
-          break;
+          // Double check to ensure we didn't just hit a temporary empty result
+          consecutiveEmptyBatches++;
+          if (consecutiveEmptyBatches >= 2) {
+            hasMore = false;
+            break;
+          }
+          continue;
         }
 
+        consecutiveEmptyBatches = 0;
         const ids = data.map(item => item.id);
+
+        // 2. Delete this specific batch of IDs
         const { error: deleteError } = await supabase
           .from('inventory_balances')
           .delete()
           .in('id', ids);
 
-        if (deleteError) throw deleteError;
+        if (deleteError) {
+          // If a specific batch fails, it's likely a database constraint or permission issue
+          throw new Error(`Lỗi SQL khi xóa: ${deleteError.message}`);
+        }
         
         totalDeleted += ids.length;
-        batchCount++;
         
-        // Update progress message
-        setMessage({ type: 'success', text: `Đang xóa dữ liệu... Đã xóa ${totalDeleted.toLocaleString()} mục.` });
+        // 3. Update UI progress
+        setMessage({ 
+          type: 'success', 
+          text: `Đang thực hiện xóa... Đã xóa ${totalDeleted.toLocaleString()} mục.` 
+        });
+
+        // 4. Small delay to prevent overwhelming the database connection
+        await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Safety break to prevent infinite loop
-        if (batchCount > 200) { // Max 400,000 items
+        // Safety limit to prevent infinite loops (max 100k items)
+        if (totalDeleted > 100000) {
           break;
         }
       }
 
-      setMessage({ 
-        type: 'success', 
-        text: totalDeleted > 0 
-          ? `Đã xóa toàn bộ tồn kho thành công (${totalDeleted.toLocaleString()} mục).` 
-          : 'Kho đã trống, không có gì để xóa.' 
-      });
+      if (totalDeleted > 0) {
+        setMessage({ 
+          type: 'success', 
+          text: `THÀNH CÔNG: Đã xóa sạch toàn bộ ${totalDeleted.toLocaleString()} mục tồn kho.` 
+        });
+      } else {
+        setMessage({ type: 'success', text: 'Kho đã trống, không có dữ liệu để xóa.' });
+      }
+      
+      // Reset local state
       setInventory([]);
       setTotalCount(0);
       setSelectedItems(new Set());
-      fetchInventory();
+      setCurrentPage(1);
+      
     } catch (error: any) {
       console.error('Delete all error:', error);
-      setMessage({ type: 'error', text: 'Lỗi khi xóa toàn bộ: ' + error.message });
+      setMessage({ 
+        type: 'error', 
+        text: 'LỖI HỆ THỐNG: ' + (error.message || 'Không thể hoàn thành việc xóa.') 
+      });
     } finally {
       setLoading(false);
     }
@@ -248,9 +259,45 @@ export default function Inventory() {
 
           setImportProgress({ current: 0, total: totalItems });
 
-          const itemsToInsert = data.map(row => {
-            const so = row['SO'] || row['so'] || '';
-            const rpro = row['RPRO'] || row['rpro'] || '';
+          // 1. Fetch all existing items to check for duplicates by SO and RPRO
+          // This allows us to "append" new items and "update" existing ones without creating duplicates
+          const existingMap = new Map<string, { id: string, qr_code: string }>();
+          let offset = 0;
+          const fetchLimit = 5000;
+          let hasMoreExisting = true;
+          
+          setMessage({ type: 'success', text: 'Đang kiểm tra dữ liệu tồn kho hiện có...' });
+          
+          while (hasMoreExisting) {
+            const { data: batch, error: fetchError } = await supabase
+              .from('inventory_balances')
+              .select('id, so, rpro, qr_code')
+              .range(offset, offset + fetchLimit - 1);
+            
+            if (fetchError) throw fetchError;
+            if (!batch || batch.length === 0) {
+              hasMoreExisting = false;
+            } else {
+              batch.forEach(item => {
+                const key = `${item.so || ''}|${item.rpro || ''}`;
+                // If there are already duplicates in DB, we'll just map to the first one found
+                if (!existingMap.has(key)) {
+                  existingMap.set(key, { id: item.id, qr_code: item.qr_code });
+                }
+              });
+              offset += fetchLimit;
+            }
+          }
+
+          // 2. Process Excel data and deduplicate within the file
+          const fileDataMap = new Map<string, any>();
+
+          data.forEach(row => {
+            const so = String(row['SO'] || row['so'] || '').trim();
+            const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
+            if (!so && !rpro) return;
+
+            const key = `${so}|${rpro}`;
             const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
             const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
             const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
@@ -268,7 +315,8 @@ export default function Inventory() {
               totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
             }
 
-            return {
+            // Keep the last occurrence in the file for each SO|RPRO
+            fileDataMap.set(key, {
               so,
               rpro,
               kh,
@@ -276,41 +324,56 @@ export default function Inventory() {
               location_path: location,
               quantity,
               total_boxes: totalBoxes,
-              qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
+              qr_code: qrCodeFromExcel
+            });
+          });
+
+          // 3. Prepare final list for upsert
+          const itemsToUpsert: any[] = [];
+          fileDataMap.forEach((item, key) => {
+            const existing = existingMap.get(key);
+            
+            const upsertItem: any = {
+              ...item,
+              // Use Excel QR code, or existing QR code, or generate a new one
+              qr_code: item.qr_code || existing?.qr_code || `${item.so}|${item.rpro}|${Math.random().toString(36).substring(2, 7)}`,
               last_updated: new Date().toISOString()
             };
+
+            // Only include id if it exists to avoid null constraint violation on insert
+            if (existing?.id) {
+              upsertItem.id = existing.id;
+            }
+
+            itemsToUpsert.push(upsertItem);
           });
 
-          // Deduplicate by qr_code to avoid "ON CONFLICT DO UPDATE command cannot affect row a second time"
-          const uniqueItemsMap = new Map();
-          itemsToInsert.forEach(item => {
-            uniqueItemsMap.set(item.qr_code, item);
-          });
-          const uniqueItemsToInsert = Array.from(uniqueItemsMap.values());
-          const totalUnique = uniqueItemsToInsert.length;
+          const totalToProcess = itemsToUpsert.length;
+          setImportProgress({ current: 0, total: totalToProcess });
 
-          setImportProgress({ current: 0, total: totalUnique });
-
-          // Chunking inserts
+          // 4. Chunking upserts
           const chunkSize = 1000;
           let successCount = 0;
 
-          for (let i = 0; i < uniqueItemsToInsert.length; i += chunkSize) {
-            const chunk = uniqueItemsToInsert.slice(i, i + chunkSize);
+          for (let i = 0; i < itemsToUpsert.length; i += chunkSize) {
+            const chunk = itemsToUpsert.slice(i, i + chunkSize);
             const { error } = await supabase
               .from('inventory_balances')
-              .upsert(chunk, { onConflict: 'qr_code' });
+              .upsert(chunk); // No onConflict needed when IDs are provided
             
             if (error) {
-              console.error('Error inserting chunk:', error);
-              throw new Error(`Lỗi tại dòng ${i + 1}: ${error.message}`);
+              console.error('Error upserting chunk:', error);
+              throw new Error(`Lỗi tại đợt ${Math.floor(i / chunkSize) + 1}: ${error.message}`);
             }
             
             successCount += chunk.length;
-            setImportProgress({ current: successCount, total: totalUnique });
+            setImportProgress({ current: successCount, total: totalToProcess });
           }
 
-          setMessage({ type: 'success', text: `Đã nhập thành công ${successCount} / ${totalUnique} mục tồn kho (đã lọc trùng).` });
+          setMessage({ 
+            type: 'success', 
+            text: `Đã cập nhật thành công ${successCount} mục tồn kho (đã xử lý trùng lặp theo SO & RPRO).` 
+          });
           fetchInventory();
         } catch (error: any) {
           console.error('Import error:', error);

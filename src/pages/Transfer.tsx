@@ -200,8 +200,7 @@ export default function Transfer() {
           from_location: item.fromLocation,
           to_location: item.toLocation,
           quantity: item.quantity,
-          remark: 'Chuyển vị trí hàng (Batch)',
-          user_email: authUser?.email
+          remark: `Chuyển vị trí hàng (Batch) - ${authUser?.email || 'System'}`
         }));
 
         const [updateResults, movementResult] = await Promise.all([
@@ -291,7 +290,7 @@ export default function Transfer() {
       'FROM': item.from_location,
       'TO': item.to_location,
       'QUANTITY': item.quantity,
-      'USER': item.user_email
+      'REMARK': item.remark
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -593,7 +592,7 @@ export default function Transfer() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">VỊ TRÍ CŨ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">VỊ TRÍ MỚI</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">SỐ LƯỢNG</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">NGƯỜI THỰC HIỆN</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">GHI CHÚ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">THỜI GIAN</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center"></th>
                   </tr>
@@ -617,7 +616,7 @@ export default function Transfer() {
                         <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded font-bold">{item.to_location}</span>
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.quantity}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.user_email}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center italic text-slate-500">{item.remark}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.created_at).toLocaleString('vi-VN')}</td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         {isAdmin && (

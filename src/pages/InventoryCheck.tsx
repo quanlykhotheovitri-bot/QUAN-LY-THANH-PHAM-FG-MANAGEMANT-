@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useLoading } from '../contexts/LoadingContext';
 import { 
   Scan, 
   CheckCircle2, 
@@ -16,6 +17,7 @@ import { parseQRCode, formatDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function InventoryCheck() {
+  const { setIsLoading } = useLoading();
   const [isScanning, setIsScanning] = useState(false);
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +50,7 @@ export default function InventoryCheck() {
   const handleSaveCheck = async () => {
     if (scannedItems.length === 0) return;
     setLoading(true);
+    setIsLoading(true);
 
     try {
       for (const item of scannedItems) {
@@ -85,6 +88,7 @@ export default function InventoryCheck() {
       setMessage({ type: 'error', text: error.message });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 

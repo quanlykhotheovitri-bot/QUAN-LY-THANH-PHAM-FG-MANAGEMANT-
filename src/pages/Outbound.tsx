@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { parseQRCode } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
@@ -26,10 +28,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
-import { useAuth } from '../contexts/AuthContext';
 
 export default function Outbound() {
   const { user: authUser } = useAuth();
+  const { setIsLoading } = useLoading();
   const isAdmin = authUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
@@ -231,6 +233,7 @@ export default function Outbound() {
   const handleProcessManual = async () => {
     if (!manualQR.trim()) return;
     setLoading(true);
+    setIsLoading(true);
     try {
       const lines = manualQR.split('\n').filter(line => line.trim() !== '');
       const parsedItems = lines.map(line => parseQRCode(line.trim()));
@@ -319,6 +322,7 @@ export default function Outbound() {
       setMessage({ type: 'error', text: 'Lỗi xử lý mã: ' + error.message });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -327,6 +331,7 @@ export default function Outbound() {
     if (unsavedItems.length === 0) return;
     
     setLoading(true);
+    setIsLoading(true);
     try {
       // Insert into outbound_transactions (Data xuất)
       const { error: txError } = await supabase.from('outbound_transactions').insert(
@@ -363,6 +368,7 @@ export default function Outbound() {
       setMessage({ type: 'error', text: 'Lỗi khi lưu dữ liệu: ' + error.message });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -669,6 +675,7 @@ export default function Outbound() {
 
   async function fetchOutboundData() {
     setOutboundLoading(true);
+    setIsLoading(true);
     const from = (outboundPage - 1) * outboundPageSize;
     const to = from + outboundPageSize - 1;
 
@@ -684,6 +691,7 @@ export default function Outbound() {
       if (count !== null) setOutboundTotal(count);
     }
     setOutboundLoading(false);
+    setIsLoading(false);
   }
 
   const deleteOutbound = async (id: string) => {

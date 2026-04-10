@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { parseQRCode } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
@@ -19,10 +21,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
-import { useAuth } from '../contexts/AuthContext';
 
 export default function Transfer() {
   const { user: authUser } = useAuth();
+  const { setIsLoading } = useLoading();
   const isAdmin = authUser?.role === 'admin';
   
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
@@ -67,6 +69,7 @@ export default function Transfer() {
 
   async function fetchHistory() {
     setHistoryLoading(true);
+    setIsLoading(true);
     const from = (historyPage - 1) * historyPageSize;
     const to = from + historyPageSize - 1;
 
@@ -84,6 +87,7 @@ export default function Transfer() {
       if (count !== null) setHistoryTotal(count);
     }
     setHistoryLoading(false);
+    setIsLoading(false);
   }
 
   const matchedLocation = locations.find(l => l.full_path.trim().toLowerCase() === locationInput.trim().toLowerCase());
@@ -179,6 +183,7 @@ export default function Transfer() {
     }
 
     setLoading(true);
+    setIsLoading(true);
     try {
       const chunkSize = 100;
       for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
@@ -219,6 +224,7 @@ export default function Transfer() {
       setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 

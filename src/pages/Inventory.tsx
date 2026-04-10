@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { 
   Search, 
   Filter, 
@@ -18,6 +19,7 @@ import { formatDate } from '../lib/utils';
 
 export default function Inventory() {
   const { user } = useAuth();
+  const { setIsLoading } = useLoading();
   const isAdmin = user?.role === 'admin';
   const [inventory, setInventory] = useState<InventoryBalance[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -41,6 +43,7 @@ export default function Inventory() {
 
   async function fetchInventory() {
     setLoading(true);
+    setIsLoading(true);
     const from = (currentPage - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -66,6 +69,7 @@ export default function Inventory() {
       if (count !== null) setTotalCount(count);
     }
     setLoading(false);
+    setIsLoading(false);
   }
 
   const toggleSelectItem = (id: string) => {
@@ -109,6 +113,7 @@ export default function Inventory() {
     if (selectedItems.size === 0) return;
 
     setLoading(true);
+    setIsLoading(true);
     try {
       const selectedGroupKeys = Array.from(selectedItems);
       const idsToDelete: string[] = [];
@@ -139,6 +144,7 @@ export default function Inventory() {
       setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -146,6 +152,7 @@ export default function Inventory() {
     if (!window.confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TỒN KHO? Hành động này không thể hoàn tác.')) return;
 
     setLoading(true);
+    setIsLoading(true);
     setMessage({ type: 'success', text: 'Đang chuẩn bị xóa dữ liệu...' });
     
     try {
@@ -231,6 +238,7 @@ export default function Inventory() {
       });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -239,6 +247,7 @@ export default function Inventory() {
     if (!file) return;
 
     setLoading(true);
+    setIsLoading(true);
     setImportProgress(null);
     try {
       const reader = new FileReader();
@@ -254,14 +263,17 @@ export default function Inventory() {
           if (totalItems === 0) {
             setMessage({ type: 'error', text: 'File Excel không có dữ liệu.' });
             setLoading(false);
+            setIsLoading(false);
             return;
           }
 
           setImportProgress({ current: 0, total: totalItems });
 
-          // 1. Fetch all existing items to check for duplicates by SO and RPRO
-          // This allows us to "append" new items and "update" existing ones without creating duplicates
-          const existingMap = new Map<string, { id: string, qr_code: string }>();
+          // 1. Fetch all existing items to check for duplicates
+          // We'll map by QRCODE (primary) and SO|RPRO (secondary fallback)
+          const existingByQR = new Map<string, string>(); // qr_code -> id
+          const existingBySORPRO = new Map<string, string>(); // so|rpro -> id
+          
           let offset = 0;
           const fetchLimit = 5000;
           let hasMoreExisting = true;
@@ -279,29 +291,36 @@ export default function Inventory() {
               hasMoreExisting = false;
             } else {
               batch.forEach(item => {
+                if (item.qr_code) {
+                  existingByQR.set(item.qr_code, item.id);
+                }
                 const key = `${item.so || ''}|${item.rpro || ''}`;
-                // If there are already duplicates in DB, we'll just map to the first one found
-                if (!existingMap.has(key)) {
-                  existingMap.set(key, { id: item.id, qr_code: item.qr_code });
+                if (!existingBySORPRO.has(key)) {
+                  existingBySORPRO.set(key, item.id);
                 }
               });
               offset += fetchLimit;
             }
           }
 
-          // 2. Process Excel data and deduplicate within the file
+          // 2. Process Excel data
+          // We use a map to deduplicate within the file itself
+          // Priority key: QRCODE if present, otherwise SO|RPRO
           const fileDataMap = new Map<string, any>();
 
           data.forEach(row => {
             const so = String(row['SO'] || row['so'] || '').trim();
             const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
-            if (!so && !rpro) return;
+            const qrCodeFromExcel = String(row['QRCODE'] || row['qrcode'] || row['qr_code'] || '').trim();
+            
+            if (!so && !rpro && !qrCodeFromExcel) return;
 
-            const key = `${so}|${rpro}`;
+            // Determine the key for this row
+            const key = qrCodeFromExcel || `${so}|${rpro}`;
+            
             const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
             const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
             const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
-            const qrCodeFromExcel = row['QRCODE'] || row['qrcode'] || row['qr_code'];
             
             let quantity = 0;
             let totalBoxes = 0;
@@ -315,7 +334,6 @@ export default function Inventory() {
               totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
             }
 
-            // Keep the last occurrence in the file for each SO|RPRO
             fileDataMap.set(key, {
               so,
               rpro,
@@ -331,18 +349,21 @@ export default function Inventory() {
           // 3. Prepare final list for upsert
           const itemsToUpsert: any[] = [];
           fileDataMap.forEach((item, key) => {
-            const existing = existingMap.get(key);
+            // Try to find existing ID by QR first, then by SO|RPRO
+            let existingId = item.qr_code ? existingByQR.get(item.qr_code) : undefined;
+            if (!existingId) {
+              existingId = existingBySORPRO.get(`${item.so}|${item.rpro}`);
+            }
             
             const upsertItem: any = {
               ...item,
-              // Use Excel QR code, or existing QR code, or generate a new one
-              qr_code: item.qr_code || existing?.qr_code || `${item.so}|${item.rpro}|${Math.random().toString(36).substring(2, 7)}`,
+              // If no QR in Excel, use existing QR or generate a new one
+              qr_code: item.qr_code || (existingId ? Array.from(existingByQR.entries()).find(([qr, id]) => id === existingId)?.[0] : null) || `${item.so}|${item.rpro}|${Math.random().toString(36).substring(2, 7)}`,
               last_updated: new Date().toISOString()
             };
 
-            // Only include id if it exists to avoid null constraint violation on insert
-            if (existing?.id) {
-              upsertItem.id = existing.id;
+            if (existingId) {
+              upsertItem.id = existingId;
             }
 
             itemsToUpsert.push(upsertItem);
@@ -372,7 +393,7 @@ export default function Inventory() {
 
           setMessage({ 
             type: 'success', 
-            text: `Đã cập nhật thành công ${successCount} mục tồn kho (đã xử lý trùng lặp theo SO & RPRO).` 
+            text: `Đã cập nhật thành công ${successCount} mục tồn kho (đã xử lý trùng lặp).` 
           });
           fetchInventory();
         } catch (error: any) {
@@ -380,6 +401,7 @@ export default function Inventory() {
           setMessage({ type: 'error', text: 'Lỗi khi nhập: ' + error.message });
         } finally {
           setLoading(false);
+          setIsLoading(false);
           setImportProgress(null);
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
@@ -388,6 +410,7 @@ export default function Inventory() {
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi đọc file: ' + error.message });
       setLoading(false);
+      setIsLoading(false);
     }
   };
 

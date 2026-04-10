@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LoadingProvider } from './contexts/LoadingContext';
 import MainLayout from './pages/MainLayout';
 import Login from './pages/Login';
 import { isSupabaseConfigured } from './lib/supabase';
@@ -46,7 +47,9 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <AppContent />
+      <LoadingProvider>
+        <AppContent />
+      </LoadingProvider>
     </AuthProvider>
   );
 }

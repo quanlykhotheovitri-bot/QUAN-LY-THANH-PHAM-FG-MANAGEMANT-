@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { parseQRCode } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
@@ -22,10 +24,9 @@ import { WarehouseLocation, SourceImportLine } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
 
-import { useAuth } from '../contexts/AuthContext';
-
 export default function Inbound() {
   const { user: authUser } = useAuth();
+  const { setIsLoading } = useLoading();
   const isAdmin = authUser?.role === 'admin';
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
     const saved = localStorage.getItem('inbound_scanned_items');
@@ -83,6 +84,7 @@ export default function Inbound() {
 
   async function fetchHistory() {
     setHistoryLoading(true);
+    setIsLoading(true);
     const from = (historyPage - 1) * historyPageSize;
     const to = from + historyPageSize - 1;
 
@@ -99,6 +101,7 @@ export default function Inbound() {
       if (count !== null) setHistoryTotal(count);
     }
     setHistoryLoading(false);
+    setIsLoading(false);
   }
 
   async function fetchLocations() {
@@ -247,6 +250,7 @@ export default function Inbound() {
     }
 
     setLoading(true);
+    setIsLoading(true);
     setMessage(null);
     
     try {
@@ -285,6 +289,7 @@ export default function Inbound() {
       setMessage({ type: 'error', text: errorMsg || 'Có lỗi xảy ra khi nhập kho.' });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 

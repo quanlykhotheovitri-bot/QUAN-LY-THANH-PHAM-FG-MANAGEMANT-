@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { 
   History as HistoryIcon, 
   Search, 
@@ -16,6 +17,7 @@ import { formatDate } from '../lib/utils';
 
 export default function HistoryLog() {
   const { user } = useAuth();
+  const { setIsLoading } = useLoading();
   const isAdmin = user?.role === 'admin';
   const [logs, setLogs] = useState<any[]>([]);
   const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
@@ -44,6 +46,7 @@ export default function HistoryLog() {
 
   async function fetchLogs() {
     setLoading(true);
+    setIsLoading(true);
     const from = (currentPage - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -70,6 +73,7 @@ export default function HistoryLog() {
 
   async function fetchInboundData() {
     setLoading(true);
+    setIsLoading(true);
     const from = (currentPage - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -88,6 +92,7 @@ export default function HistoryLog() {
     if (data) setInboundData(data);
     if (count !== null) setTotalCount(count);
     setLoading(false);
+    setIsLoading(false);
   }
 
   const toggleSelectLog = (id: string) => {
@@ -183,6 +188,7 @@ export default function HistoryLog() {
   const deleteAllLogs = async () => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ bản ghi biến động kho?')) return;
     setLoading(true);
+    setIsLoading(true);
     const { error } = await supabase.from('inventory_movements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả: ' + error.message });
@@ -191,11 +197,13 @@ export default function HistoryLog() {
       fetchLogs();
     }
     setLoading(false);
+    setIsLoading(false);
   };
 
   const deleteAllInbound = async () => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ bản ghi nhập kho?')) return;
     setLoading(true);
+    setIsLoading(true);
     const { error } = await supabase.from('inbound_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả: ' + error.message });
@@ -204,6 +212,7 @@ export default function HistoryLog() {
       fetchInboundData();
     }
     setLoading(false);
+    setIsLoading(false);
   };
 
   const filteredLogs = logs;

@@ -146,10 +146,19 @@ export default function Inbound() {
       return;
     }
 
-    // Fetch matching info from source file if available
-    let kh = '';
-    let totalBoxes = parsed.totalBoxes;
+    // 1. Check if already in inventory
+    const { data: existingInDB } = await supabase
+      .from('inventory_balances')
+      .select('id')
+      .eq('qr_code', parsed.qrCode)
+      .single();
 
+    if (existingInDB) {
+      setMessage({ type: 'error', text: `Kiện hàng ${parsed.qrCode} đã tồn tại trong kho.` });
+      return;
+    }
+
+    // 2. Fetch matching info and check quantity
     const { data: sourceMatch } = await supabase
       .from('source_import_lines')
       .select('kh, quantity')
@@ -157,11 +166,31 @@ export default function Inbound() {
       .limit(1)
       .single();
 
+    let kh = '';
+    let totalBoxes = parsed.totalBoxes;
+
     if (sourceMatch) {
       kh = sourceMatch.kh || '';
-      // If parsed totalBoxes is 1 (default), try to use source quantity
       if (totalBoxes <= 1 && sourceMatch.quantity > 0) {
         totalBoxes = sourceMatch.quantity;
+      }
+
+      // Check current count in DB + waiting list
+      const { count: dbCount } = await supabase
+        .from('inventory_balances')
+        .select('*', { count: 'exact', head: true })
+        .eq('so', parsed.so)
+        .eq('rpro', parsed.rpro);
+
+      const waitingCount = scannedItems.filter(item => item.so === parsed.so && item.rpro === parsed.rpro).length;
+      const currentTotal = (dbCount || 0) + waitingCount;
+
+      if (sourceMatch.quantity > 0 && currentTotal >= sourceMatch.quantity) {
+        setMessage({ 
+          type: 'error', 
+          text: `Cảnh báo: RPRO ${parsed.rpro} đã đủ số lượng (${sourceMatch.quantity}/${sourceMatch.quantity}). Không thể nhập thêm.` 
+        });
+        return;
       }
     }
 
@@ -176,6 +205,9 @@ export default function Inbound() {
     setScannedItems(prev => [newItem, ...prev]);
   };
 
+  const [skippedItems, setSkippedItems] = useState<any[]>([]);
+  const [showWarning, setShowWarning] = useState(false);
+
   const handleProcessManual = () => {
     if (!manualQR.trim()) return;
     
@@ -185,65 +217,116 @@ export default function Inbound() {
     const processLines = async () => {
       setLoading(true);
       setIsLoading(true);
+      setSkippedItems([]);
       
       // Use a local set to track what we've added in this session to avoid duplicates
       const existingQRs = new Set(scannedItems.map(item => item.qrCode));
+      const currentSkipped: any[] = [];
+
+      // 1. Pre-extract all SO/RPRO to fetch counts in bulk
+      const uniqueSORPRO = new Set<string>();
+      lines.forEach(line => {
+        if (line.includes('|')) {
+          const parsed = parseQRCode(line);
+          if (parsed.so || parsed.rpro) {
+            uniqueSORPRO.add(`${parsed.so || ''}|${parsed.rpro || ''}`);
+          }
+        }
+      });
+
+      // 2. Fetch expected quantities and current counts
+      const expectedMap: Record<string, number> = {};
+      const currentCountMap: Record<string, number> = {};
+      let sourceData: any[] | null = null;
+
+      if (uniqueSORPRO.size > 0) {
+        const soList = Array.from(uniqueSORPRO).map(key => key.split('|')[0]).filter(Boolean);
+        const rproList = Array.from(uniqueSORPRO).map(key => key.split('|')[1]).filter(Boolean);
+
+        // Fetch expected from source_import_lines
+        const { data } = await supabase
+          .from('source_import_lines')
+          .select('so, rpro, quantity, kh')
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+        sourceData = data;
+        sourceData?.forEach(item => {
+          const key = `${item.so || ''}|${item.rpro || ''}`;
+          expectedMap[key] = item.quantity || 0;
+        });
+
+        // Fetch current from inventory_balances
+        const { data: balanceData } = await supabase
+          .from('inventory_balances')
+          .select('so, rpro')
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+        balanceData?.forEach(item => {
+          const key = `${item.so || ''}|${item.rpro || ''}`;
+          currentCountMap[key] = (currentCountMap[key] || 0) + 1;
+        });
+      }
+
+      // 3. Track counts including what's already in the waiting list
+      const trackingCountMap = { ...currentCountMap };
+      scannedItems.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
+      });
       
       for (const line of lines) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
         
-        // Check if it's a location (doesn't contain '|')
         if (!trimmedLine.includes('|')) {
           currentLocation = trimmedLine;
           if (!locationInput) setLocationInput(currentLocation);
           continue;
         }
 
-        // It's a QR code
         const parsed = parseQRCode(trimmedLine);
-        
-        // Skip if already in list
         if (existingQRs.has(parsed.qrCode)) continue;
 
-        // Fetch matching info from source file if available
-        let kh = '';
-        let totalBoxes = parsed.totalBoxes;
+        const key = `${parsed.so || ''}|${parsed.rpro || ''}`;
+        const expected = expectedMap[key] || 0;
+        const current = trackingCountMap[key] || 0;
 
-        try {
-          const { data: sourceMatch } = await supabase
-            .from('source_import_lines')
-            .select('kh, quantity')
-            .or(`rpro.eq.${parsed.rpro},so.eq.${parsed.so}`)
-            .limit(1)
-            .single();
-
-          if (sourceMatch) {
-            kh = sourceMatch.kh || '';
-            if (totalBoxes <= 1 && sourceMatch.quantity > 0) {
-              totalBoxes = sourceMatch.quantity;
-            }
-          }
-        } catch (e) {
-          // Ignore source match errors
+        // Check if already full
+        if (expected > 0 && current >= expected) {
+          currentSkipped.push({
+            qrCode: parsed.qrCode,
+            so: parsed.so,
+            rpro: parsed.rpro,
+            reason: `Đã đủ số lượng (${expected}/${expected})`
+          });
+          continue;
         }
+
+        // Fetch KH if not in expectedMap (though it should be if found in source)
+        let kh = '';
+        const sourceMatch = sourceData?.find(s => s.so === parsed.so && s.rpro === parsed.rpro);
+        if (sourceMatch) kh = sourceMatch.kh || '';
 
         const newItem = {
           ...parsed,
           kh,
-          totalBoxes,
+          totalBoxes: expected || parsed.totalBoxes,
           boxType: selectedBoxType,
           locationPath: currentLocation,
         };
 
-        // Push to state immediately for "line by line" effect
         setScannedItems(prev => [newItem, ...prev]);
         existingQRs.add(parsed.qrCode);
+        trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
         
-        // Small delay to allow UI to breathe if there are many items
         if (lines.length > 10) {
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise(resolve => setTimeout(resolve, 5));
         }
+      }
+
+      if (currentSkipped.length > 0) {
+        setSkippedItems(currentSkipped);
+        setShowWarning(true);
       }
 
       setManualQR('');
@@ -384,6 +467,64 @@ export default function Inbound() {
 
   return (
     <div className="space-y-6">
+      {/* Warning Modal for Skipped Items */}
+      <AnimatePresence>
+        {showWarning && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200"
+            >
+              <div className="bg-rose-600 p-6 flex items-center justify-between">
+                <div className="flex items-center gap-3 text-white">
+                  <AlertCircle className="w-8 h-8" />
+                  <div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Cảnh báo nhập thừa</h3>
+                    <p className="text-rose-100 text-xs font-bold">Phát hiện {skippedItems.length} kiện hàng đã đủ số lượng trong kho</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowWarning(false)}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors text-white"
+                >
+                  <Trash2 className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-6 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-3">
+                  {skippedItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-4 bg-rose-50 rounded-2xl border border-rose-100">
+                      <div className="space-y-1">
+                        <div className="text-xs font-black text-rose-900 uppercase tracking-wider">{item.qrCode}</div>
+                        <div className="flex gap-3 text-[10px] font-bold text-rose-600">
+                          <span>SO: {item.so}</span>
+                          <span>RPRO: {item.rpro}</span>
+                        </div>
+                      </div>
+                      <div className="px-3 py-1 bg-rose-600 text-white text-[10px] font-black rounded-full uppercase">
+                        {item.reason}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button
+                  onClick={() => setShowWarning(false)}
+                  className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-lg"
+                >
+                  ĐÃ HIỂU VÀ ĐÓNG
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex p-1 bg-slate-100 rounded-2xl w-fit border border-slate-200">
           <button 

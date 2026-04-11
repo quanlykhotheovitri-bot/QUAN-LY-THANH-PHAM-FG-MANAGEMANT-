@@ -303,10 +303,58 @@ export default function Inventory() {
             }
           }
 
-          // 2. Process Excel data
+          // 2. Fetch expected quantities from source_import_lines
+          const uniqueSORPROs = new Set<string>();
+          data.forEach(row => {
+            const so = String(row['SO'] || row['so'] || '').trim();
+            const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
+            if (so || rpro) uniqueSORPROs.add(`${so}|${rpro}`);
+          });
+
+          const expectedMap = new Map<string, number>();
+          if (uniqueSORPROs.size > 0) {
+            const soList = Array.from(uniqueSORPROs).map(k => k.split('|')[0]).filter(Boolean);
+            const rproList = Array.from(uniqueSORPROs).map(k => k.split('|')[1]).filter(Boolean);
+            
+            const { data: sourceData } = await supabase
+              .from('source_import_lines')
+              .select('so, rpro, quantity')
+              .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+            
+            sourceData?.forEach(s => {
+              expectedMap.set(`${s.so || ''}|${s.rpro || ''}`, s.quantity || 0);
+            });
+          }
+
+          // 3. Process Excel data
           // We use a map to deduplicate within the file itself
-          // Priority key: QRCODE if present, otherwise SO|RPRO
           const fileDataMap = new Map<string, any>();
+          const currentCountInFile = new Map<string, number>();
+
+          // Track current counts in DB to check against limits
+          const dbCountMap = new Map<string, number>();
+          existingBySORPRO.forEach((id, key) => {
+            // This is tricky because existingBySORPRO only stores one ID per key.
+            // We need actual counts.
+          });
+
+          // Let's fetch actual counts for the relevant SO/RPROs
+          if (uniqueSORPROs.size > 0) {
+            const soList = Array.from(uniqueSORPROs).map(k => k.split('|')[0]).filter(Boolean);
+            const rproList = Array.from(uniqueSORPROs).map(k => k.split('|')[1]).filter(Boolean);
+            
+            const { data: countsData } = await supabase
+              .from('inventory_balances')
+              .select('so, rpro')
+              .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+            
+            countsData?.forEach(c => {
+              const key = `${c.so || ''}|${c.rpro || ''}`;
+              dbCountMap.set(key, (dbCountMap.get(key) || 0) + 1);
+            });
+          }
+
+          let skippedOverLimit = 0;
 
           data.forEach(row => {
             const so = String(row['SO'] || row['so'] || '').trim();
@@ -315,9 +363,24 @@ export default function Inventory() {
             
             if (!so && !rpro && !qrCodeFromExcel) return;
 
-            // Determine the key for this row
-            const key = qrCodeFromExcel || `${so}|${rpro}`;
+            const sorproKey = `${so}|${rpro}`;
+            const key = qrCodeFromExcel || sorproKey;
             
+            // Check if this QR already exists in DB - if yes, it's an update, not an add
+            const isUpdate = qrCodeFromExcel && existingByQR.has(qrCodeFromExcel);
+            
+            if (!isUpdate) {
+              const expected = expectedMap.get(sorproKey) || 0;
+              const currentInDB = dbCountMap.get(sorproKey) || 0;
+              const currentInFile = currentCountInFile.get(sorproKey) || 0;
+
+              if (expected > 0 && (currentInDB + currentInFile) >= expected) {
+                skippedOverLimit++;
+                return; // Skip this row as it exceeds the limit
+              }
+              currentCountInFile.set(sorproKey, currentInFile + 1);
+            }
+
             const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
             const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
             const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
@@ -341,12 +404,12 @@ export default function Inventory() {
               box_type: boxType,
               location_path: location,
               quantity,
-              total_boxes: totalBoxes,
+              total_boxes: totalBoxes || expectedMap.get(sorproKey) || 0,
               qr_code: qrCodeFromExcel
             });
           });
 
-          // 3. Prepare final list for upsert
+          // 4. Prepare final list for upsert
           const itemsToUpsert: any[] = [];
           fileDataMap.forEach((item, key) => {
             // STRICT deduplication: Match ONLY by QRCODE if available
@@ -397,7 +460,7 @@ export default function Inventory() {
 
           setMessage({ 
             type: 'success', 
-            text: `Đã cập nhật thành công ${successCount} mục tồn kho (đã xử lý trùng lặp).` 
+            text: `Đã cập nhật thành công ${successCount} mục tồn kho.${skippedOverLimit > 0 ? ` Đã chặn ${skippedOverLimit} kiện hàng vượt định mức.` : ''}` 
           });
           fetchInventory();
         } catch (error: any) {

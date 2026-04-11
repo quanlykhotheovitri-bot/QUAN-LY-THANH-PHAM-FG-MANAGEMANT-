@@ -159,36 +159,43 @@ export default function Inbound() {
     }
 
     // 2. Fetch matching info and check quantity
-    const { data: sourceMatch } = await supabase
+    const { data: sourceMatches } = await supabase
       .from('source_import_lines')
       .select('kh, quantity')
-      .or(`rpro.eq.${parsed.rpro},so.eq.${parsed.so}`)
-      .limit(1)
-      .single();
+      .or(`rpro.eq."${parsed.rpro}",so.eq."${parsed.so}"`);
 
+    const sourceMatch = sourceMatches?.[0];
     let kh = '';
     let totalBoxes = parsed.totalBoxes;
 
     if (sourceMatch) {
       kh = sourceMatch.kh || '';
-      if (totalBoxes <= 1 && sourceMatch.quantity > 0) {
-        totalBoxes = sourceMatch.quantity;
+      const expectedQty = sourceMatch.quantity || 0;
+      
+      if (totalBoxes <= 1 && expectedQty > 0) {
+        totalBoxes = expectedQty;
       }
 
-      // Check current count in DB + waiting list
+      // Check current count in DB
       const { count: dbCount } = await supabase
         .from('inventory_balances')
         .select('*', { count: 'exact', head: true })
         .eq('so', parsed.so)
         .eq('rpro', parsed.rpro);
 
-      const waitingCount = scannedItems.filter(item => item.so === parsed.so && item.rpro === parsed.rpro).length;
+      // Check count in current waiting list
+      const waitingCount = scannedItems.filter(item => 
+        item.so === parsed.so && 
+        item.rpro === parsed.rpro && 
+        item.qrCode !== parsed.qrCode
+      ).length;
+
       const currentTotal = (dbCount || 0) + waitingCount;
 
-      if (sourceMatch.quantity > 0 && currentTotal >= sourceMatch.quantity) {
+      if (expectedQty > 0 && currentTotal >= expectedQty) {
         setMessage({ 
           type: 'error', 
-          text: `Cảnh báo: RPRO ${parsed.rpro} đã đủ số lượng (${sourceMatch.quantity}/${sourceMatch.quantity}). Không thể nhập thêm.` 
+          text: `CHẶN NHẬP: RPRO ${parsed.rpro} đã đủ số lượng (${expectedQty}/${expectedQty}). Không thể nhập thêm kiện hàng này.` 
         });
         return;
       }
@@ -310,7 +317,7 @@ export default function Inbound() {
             qrCode: parsed.qrCode,
             so: parsed.so,
             rpro: parsed.rpro,
-            reason: `Đã đủ số lượng (${expected}/${expected})`
+            reason: `CHẶN: Đã đủ số lượng (${expected}/${expected})`
           });
           continue;
         }

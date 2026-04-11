@@ -237,6 +237,7 @@ export default function Inbound() {
       // 2. Fetch expected quantities and current counts
       const expectedMap: Record<string, number> = {};
       const currentCountMap: Record<string, number> = {};
+      const existingInDBSet = new Set<string>();
       let sourceData: any[] | null = null;
 
       if (uniqueSORPRO.size > 0) {
@@ -258,12 +259,13 @@ export default function Inbound() {
         // Fetch current from inventory_balances
         const { data: balanceData } = await supabase
           .from('inventory_balances')
-          .select('so, rpro')
+          .select('so, rpro, qr_code')
           .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
 
         balanceData?.forEach(item => {
           const key = `${item.so || ''}|${item.rpro || ''}`;
           currentCountMap[key] = (currentCountMap[key] || 0) + 1;
+          if (item.qr_code) existingInDBSet.add(item.qr_code);
         });
       }
 
@@ -286,6 +288,17 @@ export default function Inbound() {
 
         const parsed = parseQRCode(trimmedLine);
         if (existingQRs.has(parsed.qrCode)) continue;
+
+        // Check if already in DB
+        if (existingInDBSet.has(parsed.qrCode)) {
+          currentSkipped.push({
+            qrCode: parsed.qrCode,
+            so: parsed.so,
+            rpro: parsed.rpro,
+            reason: 'Mã QR đã tồn tại trong kho'
+          });
+          continue;
+        }
 
         const key = `${parsed.so || ''}|${parsed.rpro || ''}`;
         const expected = expectedMap[key] || 0;

@@ -349,9 +349,13 @@ export default function Inventory() {
           // 3. Prepare final list for upsert
           const itemsToUpsert: any[] = [];
           fileDataMap.forEach((item, key) => {
-            // Try to find existing ID by QR first, then by SO|RPRO
+            // STRICT deduplication: Match ONLY by QRCODE if available
+            // If QRCODE is present, we don't want to match by SO|RPRO because it might 
+            // accidentally update a different box in the same order.
             let existingId = item.qr_code ? existingByQR.get(item.qr_code) : undefined;
-            if (!existingId) {
+            
+            // Only fallback to SO|RPRO if the row has NO QRCODE
+            if (!existingId && !item.qr_code) {
               existingId = existingBySORPRO.get(`${item.so}|${item.rpro}`);
             }
             
@@ -380,7 +384,7 @@ export default function Inventory() {
             const chunk = itemsToUpsert.slice(i, i + chunkSize);
             const { error } = await supabase
               .from('inventory_balances')
-              .upsert(chunk); // No onConflict needed when IDs are provided
+              .upsert(chunk, { onConflict: 'qr_code' }); // CRITICAL: Use onConflict to prevent duplicates
             
             if (error) {
               console.error('Error upserting chunk:', error);

@@ -33,8 +33,10 @@ export function parseQRCode(qrData: string) {
 
     // Check for box indicator in any part
     const boxIndicatorPart = parts.find(p => p.includes('/'));
+    let boxNumber = 1;
     if (boxIndicatorPart) {
-      const totalStr = boxIndicatorPart.split('/')[1];
+      const [boxNumStr, totalStr] = boxIndicatorPart.split('/');
+      boxNumber = parseInt(boxNumStr) || 1;
       totalBoxes = parseInt(totalStr) || 1;
     }
 
@@ -69,7 +71,7 @@ export function parseQRCode(qrData: string) {
       rpro: rpro,
       kh: '', 
       boxType: '', 
-      quantity: 1, 
+      quantity: boxNumber, 
       totalBoxes: totalBoxes,
       location: '',
       date: new Date().toISOString(),

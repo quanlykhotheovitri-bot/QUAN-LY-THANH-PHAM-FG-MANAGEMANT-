@@ -17,7 +17,8 @@ import {
   Download,
   Upload,
   Settings,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, SourceImportLine } from '../types';
@@ -51,6 +52,9 @@ export default function Inbound() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);
+  const [orderStatusMap, setOrderStatusMap] = useState<Record<string, string>>({});
+  const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
+  const [historySearch, setHistorySearch] = useState('');
   const historyPageSize = 50;
 
   useEffect(() => {
@@ -63,15 +67,37 @@ export default function Inbound() {
     }
   }, [activeTab, historyPage]);
 
+  const filteredHistory = historyData.filter(item => {
+    const status = orderStatusMap[`${item.so}|${item.rpro}`] || '';
+    
+    // Status filter (dropdown)
+    let matchesStatus = true;
+    if (statusFilter === 'complete') matchesStatus = status === 'Đủ đơn';
+    else if (statusFilter === 'incomplete') matchesStatus = status && status.startsWith('Thiếu');
+    
+    if (!matchesStatus) return false;
+
+    // Search filter (text)
+    if (!historySearch.trim()) return true;
+    
+    const searchLower = historySearch.toLowerCase();
+    return (
+      item.so.toLowerCase().includes(searchLower) ||
+      item.rpro.toLowerCase().includes(searchLower) ||
+      item.qr_code.toLowerCase().includes(searchLower) ||
+      status.toLowerCase().includes(searchLower)
+    );
+  });
+
   const exportHistory = (format: 'xlsx' | 'csv') => {
-    const data = historyData.map(item => ({
+    const data = filteredHistory.map(item => ({
       'QRCODE': item.qr_code,
       'DATE': formatDate(item.created_at),
       'OVN Order No': item.so,
       'RPRO': item.rpro,
-      'KHÁCH HÀNG': item.kh,
+      'TÌNH TRẠNG': orderStatusMap[`${item.so}|${item.rpro}`] || '',
       'LOẠI THÙNG': item.box_type,
-      'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `1 / ${item.total_boxes}` : '1',
+      'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
       'VỊ TRÍ': item.location_path,
       'NGƯỜI NHẬP': item.user_email
     }));
@@ -97,6 +123,54 @@ export default function Inbound() {
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
     } else if (data) {
+      // Calculate status for each SO/RPRO
+      const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
+      
+      const statusMap: Record<string, string> = {};
+
+      if (uniqueSORPRO.length > 0) {
+        // Fetch all boxes for these SO/RPROs to check completeness
+        const { data: allRelated } = await supabase
+          .from('inbound_transactions')
+          .select('qr_code, so, rpro')
+          .or(uniqueSORPRO.map(key => {
+            const [so, rpro] = key.split('|');
+            return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+          }).join(','));
+
+        uniqueSORPRO.forEach(key => {
+          const [so, rpro] = key.split('|');
+          const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
+          const itemInPage = data.find(d => d.so === so && d.rpro === rpro);
+          const total = itemInPage?.total_boxes || 0;
+          
+          if (total <= 0) {
+            statusMap[key] = 'Đủ đơn';
+            return;
+          }
+
+          const presentBoxes = new Set<number>();
+          relatedBoxes.forEach(b => {
+            const parsed = parseQRCode(b.qr_code);
+            presentBoxes.add(parsed.quantity); // quantity is boxNumber now
+          });
+
+          const missing = [];
+          for (let i = 1; i <= total; i++) {
+            if (!presentBoxes.has(i)) {
+              missing.push(i);
+            }
+          }
+
+          if (missing.length === 0) {
+            statusMap[key] = 'Đủ đơn';
+          } else {
+            statusMap[key] = `Thiếu thùng số ${missing.join(', ')}`;
+          }
+        });
+      }
+
+      setOrderStatusMap(statusMap);
       setHistoryData(data);
       if (count !== null) setHistoryTotal(count);
     }
@@ -798,7 +872,7 @@ export default function Inbound() {
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
@@ -825,7 +899,9 @@ export default function Inbound() {
                             <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qrCode}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">{item.kh}</td>
+                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">
+                              {orderStatusMap[`${item.so}|${item.rpro}`] || 'Đang kiểm tra...'}
+                            </td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.boxType}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
                               {item.totalBoxes > 0 ? `1 / ${item.totalBoxes}` : '1'}
@@ -864,6 +940,27 @@ export default function Inbound() {
           <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho (DATA NHẬP KHO)</h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-bold focus:outline-none focus:border-blue-500 transition-all shadow-sm"
+                >
+                  <option value="all">Tất cả tình trạng</option>
+                  <option value="complete">Đủ đơn</option>
+                  <option value="incomplete">Thiếu thùng</option>
+                </select>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm tình trạng, SO, RPRO..."
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="pl-9 pr-4 py-1.5 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 transition-all shadow-sm w-64"
+                  />
+                </div>
+              </div>
               {isAdmin && selectedHistory.size > 0 && (
                 <button
                   onClick={deleteSelectedHistory}
@@ -923,7 +1020,7 @@ export default function Inbound() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
@@ -931,7 +1028,7 @@ export default function Inbound() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {historyData.map((item) => (
+                  {filteredHistory.map((item) => (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedHistory.has(item.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         {isAdmin && (
@@ -946,7 +1043,15 @@ export default function Inbound() {
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">{item.kh}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 
+                            ? 'bg-emerald-100 text-emerald-700' 
+                            : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {orderStatusMap[`${item.so}|${item.rpro}`] || 'Đang kiểm tra...'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
                         {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}

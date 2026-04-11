@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { InventoryBalance } from '../types';
-import { formatDate } from '../lib/utils';
+import { formatDate, parseQRCode } from '../lib/utils';
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -257,7 +257,49 @@ export default function Inventory() {
           const wb = XLSX.read(bstr, { type: 'binary' });
           const wsname = wb.SheetNames[0];
           const ws = wb.Sheets[wsname];
-          const data = XLSX.utils.sheet_to_json(ws) as any[];
+          
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+          if (rawRows.length === 0) {
+            setMessage({ type: 'error', text: 'File Excel không có dữ liệu.' });
+            setLoading(false);
+            setIsLoading(false);
+            return;
+          }
+
+          // Check if it's structured or single column
+          let isStructured = false;
+          const firstFewRows = rawRows.slice(0, 5);
+          for (const row of firstFewRows) {
+            const rowStr = row.map(c => String(c || '').toUpperCase());
+            if (rowStr.includes('SO') || rowStr.includes('RPRO') || rowStr.includes('QRCODE')) {
+              isStructured = true;
+              break;
+            }
+          }
+
+          let data: any[] = [];
+          if (isStructured) {
+            data = XLSX.utils.sheet_to_json(ws);
+          } else {
+            let currentLocation = '';
+            rawRows.forEach(row => {
+              const val = String(row[0] || '').trim();
+              if (!val) return;
+              
+              if (val.includes('|')) {
+                const parsed = parseQRCode(val);
+                data.push({
+                  'SO': parsed.so,
+                  'RPRO': parsed.rpro,
+                  'QRCODE': parsed.qrCode,
+                  'VỊ TRÍ': currentLocation,
+                  'SỐ THÙNG ĐƠN HÀNG': `${parsed.quantity}/${parsed.totalBoxes}`
+                });
+              } else {
+                currentLocation = val;
+              }
+            });
+          }
 
           const totalItems = data.length;
           if (totalItems === 0) {

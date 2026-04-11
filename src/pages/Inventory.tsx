@@ -283,11 +283,12 @@ export default function Inventory() {
           } else {
             let currentLocation = '';
             rawRows.forEach(row => {
-              const val = String(row[0] || '').trim();
-              if (!val) return;
+              const rowValues = row.map(v => String(v || '').trim()).filter(Boolean);
+              if (rowValues.length === 0) return;
               
-              if (val.includes('|')) {
-                const parsed = parseQRCode(val);
+              const qrValue = rowValues.find(v => v.includes('|'));
+              if (qrValue) {
+                const parsed = parseQRCode(qrValue);
                 data.push({
                   'SO': parsed.so,
                   'RPRO': parsed.rpro,
@@ -296,7 +297,8 @@ export default function Inventory() {
                   'SỐ THÙNG ĐƠN HÀNG': `${parsed.quantity}/${parsed.totalBoxes}`
                 });
               } else {
-                currentLocation = val;
+                // If no pipe, the first value is the location
+                currentLocation = rowValues[0];
               }
             });
           }

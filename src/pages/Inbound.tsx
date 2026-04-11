@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
@@ -111,19 +111,6 @@ export default function Inbound() {
 
   const matchedLocation = locations.find(l => l.full_path.trim().toLowerCase() === locationInput.trim().toLowerCase());
 
-  useEffect(() => {
-    // Optimization: Only update if items exist and we have a valid location or input
-    // But for 5000 items, this is still slow. 
-    // Let's only update the state if the number of items is small, 
-    // otherwise we'll handle it at confirmation time to avoid UI lag.
-    if (scannedItems.length > 0 && scannedItems.length < 500) {
-      setScannedItems(prev => prev.map(item => ({
-        ...item,
-        locationPath: matchedLocation?.full_path || locationInput
-      })));
-    }
-  }, [locationInput, matchedLocation]);
-
   const handleScan = async (qrData: string) => {
     const trimmedQR = qrData.trim();
     const matchedLoc = locations.find(l => l.full_path.trim().toLowerCase() === trimmedQR.toLowerCase());
@@ -219,142 +206,187 @@ export default function Inbound() {
     if (!manualQR.trim()) return;
     
     const lines = manualQR.split('\n').filter(line => line.trim() !== '');
-    let currentLocation = matchedLocation?.full_path || locationInput || '';
+    processLines(lines);
+  };
 
-    const processLines = async () => {
-      setLoading(true);
-      setIsLoading(true);
-      setSkippedItems([]);
-      
-      // Use a local set to track what we've added in this session to avoid duplicates
-      const existingQRs = new Set(scannedItems.map(item => item.qrCode));
-      const currentSkipped: any[] = [];
+  const handleImportExcel = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-      // 1. Pre-extract all SO/RPRO to fetch counts in bulk
-      const uniqueSORPRO = new Set<string>();
-      lines.forEach(line => {
-        if (line.includes('|')) {
-          const parsed = parseQRCode(line);
-          if (parsed.so || parsed.rpro) {
-            uniqueSORPRO.add(`${parsed.so || ''}|${parsed.rpro || ''}`);
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        
+        const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        if (rawRows.length === 0) {
+          setMessage({ type: 'error', text: 'File Excel không có dữ liệu.' });
+          setIsLoading(false);
+          return;
+        }
+
+        const lines: string[] = [];
+        rawRows.forEach(row => {
+          const rowValues = row.map(v => String(v || '').trim()).filter(Boolean);
+          if (rowValues.length === 0) return;
+          
+          const qrValue = rowValues.find(v => v.includes('|'));
+          if (qrValue) {
+            lines.push(qrValue);
+          } else {
+            lines.push(rowValues[0]);
           }
-        }
-      });
-
-      // 2. Fetch expected quantities and current counts
-      const expectedMap: Record<string, number> = {};
-      const currentCountMap: Record<string, number> = {};
-      const existingInDBSet = new Set<string>();
-      let sourceData: any[] | null = null;
-
-      if (uniqueSORPRO.size > 0) {
-        const soList = Array.from(uniqueSORPRO).map(key => key.split('|')[0]).filter(Boolean);
-        const rproList = Array.from(uniqueSORPRO).map(key => key.split('|')[1]).filter(Boolean);
-
-        // Fetch expected from source_import_lines
-        const { data } = await supabase
-          .from('source_import_lines')
-          .select('so, rpro, quantity, kh')
-          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
-
-        sourceData = data;
-        sourceData?.forEach(item => {
-          const key = `${item.so || ''}|${item.rpro || ''}`;
-          expectedMap[key] = item.quantity || 0;
         });
 
-        // Fetch current from inventory_balances
-        const { data: balanceData } = await supabase
-          .from('inventory_balances')
-          .select('so, rpro, qr_code')
-          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
-
-        balanceData?.forEach(item => {
-          const key = `${item.so || ''}|${item.rpro || ''}`;
-          currentCountMap[key] = (currentCountMap[key] || 0) + 1;
-          if (item.qr_code) existingInDBSet.add(item.qr_code);
-        });
+        processLines(lines);
+      } catch (err: any) {
+        setMessage({ type: 'error', text: 'Lỗi đọc file Excel: ' + err.message });
+        setIsLoading(false);
       }
-
-      // 3. Track counts including what's already in the waiting list
-      const trackingCountMap = { ...currentCountMap };
-      scannedItems.forEach(item => {
-        const key = `${item.so || ''}|${item.rpro || ''}`;
-        trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
-      });
-      
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
-        
-        if (!trimmedLine.includes('|')) {
-          currentLocation = trimmedLine;
-          if (!locationInput) setLocationInput(currentLocation);
-          continue;
-        }
-
-        const parsed = parseQRCode(trimmedLine);
-        if (existingQRs.has(parsed.qrCode)) continue;
-
-        // Check if already in DB
-        if (existingInDBSet.has(parsed.qrCode)) {
-          currentSkipped.push({
-            qrCode: parsed.qrCode,
-            so: parsed.so,
-            rpro: parsed.rpro,
-            reason: 'Mã QR đã tồn tại trong kho'
-          });
-          continue;
-        }
-
-        const key = `${parsed.so || ''}|${parsed.rpro || ''}`;
-        const expected = expectedMap[key] || 0;
-        const current = trackingCountMap[key] || 0;
-
-        // Check if already full
-        if (expected > 0 && current >= expected) {
-          currentSkipped.push({
-            qrCode: parsed.qrCode,
-            so: parsed.so,
-            rpro: parsed.rpro,
-            reason: `CHẶN: Đã đủ số lượng (${expected}/${expected})`
-          });
-          continue;
-        }
-
-        // Fetch KH if not in expectedMap (though it should be if found in source)
-        let kh = '';
-        const sourceMatch = sourceData?.find(s => s.so === parsed.so && s.rpro === parsed.rpro);
-        if (sourceMatch) kh = sourceMatch.kh || '';
-
-        const newItem = {
-          ...parsed,
-          kh,
-          totalBoxes: expected || parsed.totalBoxes,
-          boxType: selectedBoxType,
-          locationPath: currentLocation,
-        };
-
-        setScannedItems(prev => [newItem, ...prev]);
-        existingQRs.add(parsed.qrCode);
-        trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
-        
-        if (lines.length > 10) {
-          await new Promise(resolve => setTimeout(resolve, 5));
-        }
-      }
-
-      if (currentSkipped.length > 0) {
-        setSkippedItems(currentSkipped);
-        setShowWarning(true);
-      }
-
-      setManualQR('');
-      setLoading(false);
-      setIsLoading(false);
     };
+    reader.readAsBinaryString(file);
+    e.target.value = ''; // Reset input
+  };
 
-    processLines();
+  const processLines = async (lines: string[]) => {
+    setLoading(true);
+    setIsLoading(true);
+    setSkippedItems([]);
+    
+    let currentLocation = matchedLocation?.full_path || locationInput || '';
+    
+    // Use a local set to track what we've added in this session to avoid duplicates
+    const existingQRs = new Set(scannedItems.map(item => item.qrCode));
+    const currentSkipped: any[] = [];
+
+    // 1. Pre-extract all SO/RPRO to fetch counts in bulk
+    const uniqueSORPRO = new Set<string>();
+    lines.forEach(line => {
+      if (line.includes('|')) {
+        const parsed = parseQRCode(line);
+        if (parsed.so || parsed.rpro) {
+          uniqueSORPRO.add(`${parsed.so || ''}|${parsed.rpro || ''}`);
+        }
+      }
+    });
+
+    // 2. Fetch expected quantities and current counts
+    const expectedMap: Record<string, number> = {};
+    const currentCountMap: Record<string, number> = {};
+    const existingInDBSet = new Set<string>();
+    let sourceData: any[] | null = null;
+
+    if (uniqueSORPRO.size > 0) {
+      const soList = Array.from(uniqueSORPRO).map(key => key.split('|')[0]).filter(Boolean);
+      const rproList = Array.from(uniqueSORPRO).map(key => key.split('|')[1]).filter(Boolean);
+
+      // Fetch expected from source_import_lines
+      const { data } = await supabase
+        .from('source_import_lines')
+        .select('so, rpro, quantity, kh')
+        .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+      sourceData = data;
+      sourceData?.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        expectedMap[key] = item.quantity || 0;
+      });
+
+      // Fetch current from inventory_balances
+      const { data: balanceData } = await supabase
+        .from('inventory_balances')
+        .select('so, rpro, qr_code')
+        .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+      balanceData?.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        currentCountMap[key] = (currentCountMap[key] || 0) + 1;
+        if (item.qr_code) existingInDBSet.add(item.qr_code);
+      });
+    }
+
+    // 3. Track counts including what's already in the waiting list
+    const trackingCountMap = { ...currentCountMap };
+    scannedItems.forEach(item => {
+      const key = `${item.so || ''}|${item.rpro || ''}`;
+      trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
+    });
+    
+    const newItems: any[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      if (!trimmedLine.includes('|')) {
+        currentLocation = trimmedLine;
+        if (!locationInput) setLocationInput(currentLocation);
+        continue;
+      }
+
+      const parsed = parseQRCode(trimmedLine);
+      if (existingQRs.has(parsed.qrCode)) continue;
+
+      // Check if already in DB
+      if (existingInDBSet.has(parsed.qrCode)) {
+        currentSkipped.push({
+          qrCode: parsed.qrCode,
+          so: parsed.so,
+          rpro: parsed.rpro,
+          reason: 'Mã QR đã tồn tại trong kho'
+        });
+        continue;
+      }
+
+      const key = `${parsed.so || ''}|${parsed.rpro || ''}`;
+      const expected = expectedMap[key] || 0;
+      const current = trackingCountMap[key] || 0;
+
+      // Check if already full
+      if (expected > 0 && current >= expected) {
+        currentSkipped.push({
+          qrCode: parsed.qrCode,
+          so: parsed.so,
+          rpro: parsed.rpro,
+          reason: `CHẶN: Đã đủ số lượng (${expected}/${expected})`
+        });
+        continue;
+      }
+
+      // Fetch KH if not in expectedMap (though it should be if found in source)
+      let kh = '';
+      const sourceMatch = sourceData?.find(s => s.so === parsed.so && s.rpro === parsed.rpro);
+      if (sourceMatch) kh = sourceMatch.kh || '';
+
+      const newItem = {
+        ...parsed,
+        kh,
+        totalBoxes: expected || parsed.totalBoxes,
+        boxType: selectedBoxType,
+        locationPath: currentLocation,
+      };
+
+      newItems.push(newItem);
+      existingQRs.add(parsed.qrCode);
+      trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
+    }
+
+    if (newItems.length > 0) {
+      setScannedItems(prev => [...newItems, ...prev]);
+    }
+
+    if (currentSkipped.length > 0) {
+      setSkippedItems(currentSkipped);
+      setShowWarning(true);
+    }
+
+    setManualQR('');
+    setLoading(false);
+    setIsLoading(false);
   };
 
   const handleConfirmInbound = async () => {
@@ -644,6 +676,20 @@ export default function Inbound() {
                     >
                       Xử lý mã
                     </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Nhập từ Excel</label>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black hover:bg-slate-50 transition-all cursor-pointer shadow-sm">
+                      <Upload className="w-4 h-4 text-blue-600" />
+                      CHỌN FILE EXCEL
+                      <input
+                        type="file"
+                        accept=".xlsx, .xls"
+                        onChange={handleImportExcel}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
 
                   <div>

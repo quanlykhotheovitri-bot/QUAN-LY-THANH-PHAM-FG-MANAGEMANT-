@@ -156,18 +156,30 @@ export default function Transfer() {
 
     const processLines = async () => {
       setLoading(true);
+      setIsLoading(true);
+      
       for (const line of lines) {
         const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+
         if (!trimmedLine.includes('|')) {
           currentLocation = trimmedLine;
           // If we find a location, we can also update the main location input if it's empty
           if (!locationInput) setLocationInput(currentLocation);
           continue;
         }
+        
         await processSingleQR(trimmedLine, currentLocation);
+        
+        // Small delay to allow UI to breathe if there are many items
+        if (lines.length > 10) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
       }
+      
       setManualQR('');
       setLoading(false);
+      setIsLoading(false);
     };
 
     processLines();

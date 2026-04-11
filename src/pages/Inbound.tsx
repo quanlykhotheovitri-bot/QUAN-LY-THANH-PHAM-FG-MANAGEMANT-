@@ -180,31 +180,37 @@ export default function Inbound() {
     if (!manualQR.trim()) return;
     
     const lines = manualQR.split('\n').filter(line => line.trim() !== '');
-    const newItems: any[] = [];
     let currentLocation = matchedLocation?.full_path || locationInput || '';
 
-    // Optimize: Use Sets for O(1) lookup instead of O(N) .some()
-    const existingQRs = new Set(scannedItems.map(item => item.qrCode));
-    const addedInBatch = new Set();
-
-    // Process each line
     const processLines = async () => {
+      setLoading(true);
+      setIsLoading(true);
+      
+      // Use a local set to track what we've added in this session to avoid duplicates
+      const existingQRs = new Set(scannedItems.map(item => item.qrCode));
+      
       for (const line of lines) {
         const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
         
         // Check if it's a location (doesn't contain '|')
         if (!trimmedLine.includes('|')) {
           currentLocation = trimmedLine;
+          if (!locationInput) setLocationInput(currentLocation);
           continue;
         }
 
         // It's a QR code
         const parsed = parseQRCode(trimmedLine);
-        if (!existingQRs.has(parsed.qrCode) && !addedInBatch.has(parsed.qrCode)) {
-          // Fetch matching info from source file if available
-          let kh = '';
-          let totalBoxes = parsed.totalBoxes;
+        
+        // Skip if already in list
+        if (existingQRs.has(parsed.qrCode)) continue;
 
+        // Fetch matching info from source file if available
+        let kh = '';
+        let totalBoxes = parsed.totalBoxes;
+
+        try {
           const { data: sourceMatch } = await supabase
             .from('source_import_lines')
             .select('kh, quantity')
@@ -218,22 +224,31 @@ export default function Inbound() {
               totalBoxes = sourceMatch.quantity;
             }
           }
+        } catch (e) {
+          // Ignore source match errors
+        }
 
-          newItems.push({
-            ...parsed,
-            kh,
-            totalBoxes,
-            boxType: selectedBoxType,
-            locationPath: currentLocation,
-          });
-          addedInBatch.add(parsed.qrCode);
+        const newItem = {
+          ...parsed,
+          kh,
+          totalBoxes,
+          boxType: selectedBoxType,
+          locationPath: currentLocation,
+        };
+
+        // Push to state immediately for "line by line" effect
+        setScannedItems(prev => [newItem, ...prev]);
+        existingQRs.add(parsed.qrCode);
+        
+        // Small delay to allow UI to breathe if there are many items
+        if (lines.length > 10) {
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
 
-      if (newItems.length > 0) {
-        setScannedItems(prev => [...newItems, ...prev]);
-      }
       setManualQR('');
+      setLoading(false);
+      setIsLoading(false);
     };
 
     processLines();

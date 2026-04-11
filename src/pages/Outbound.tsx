@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
-import { parseQRCode } from '../lib/utils';
+import { parseQRCode, clearAppCache } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
   Scan, 
@@ -841,6 +841,7 @@ export default function Outbound() {
       setMessage({ type: 'success', text: `Đã xuất kho thành công ${scannedItems.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
+      clearAppCache();
       fetchOutboundData();
     } catch (error: any) {
       console.error('Outbound error:', error);

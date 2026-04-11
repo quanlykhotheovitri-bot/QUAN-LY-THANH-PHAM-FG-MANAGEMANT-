@@ -23,7 +23,7 @@ export default function StorageUsage() {
     return () => clearInterval(interval);
   }, []);
 
-  async function fetchUsage() {
+  const fetchUsage = async () => {
     try {
       // Count rows in main tables
       const [
@@ -39,85 +39,63 @@ export default function StorageUsage() {
       ]);
 
       const totalRows = (inventoryCount || 0) + (inboundCount || 0) + (outboundCount || 0) + (sourceCount || 0);
-      const percentage = Math.min(100, (totalRows / ROW_LIMIT_ESTIMATE) * 100);
+      
+      // Simulation: 1,000 rows ≈ 0.01 MB
+      // 500,000 rows ≈ 5.00 MB (Limit)
+      const MB_LIMIT = 5.00;
+      const usedMB = (totalRows * 0.00001); // 100k rows = 1MB
+      const percentage = Math.min(100, (usedMB / MB_LIMIT) * 100);
       
       let status: 'normal' | 'warning' | 'critical' = 'normal';
       if (percentage > 90) status = 'critical';
       else if (percentage > 70) status = 'warning';
 
-      setUsage({ percentage, totalRows, status });
+      setUsage({ percentage, totalRows: usedMB, status });
     } catch (error) {
       console.error('Error fetching storage usage:', error);
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const handleClearCache = () => {
+    // Clear local storage and session storage
+    localStorage.clear();
+    sessionStorage.clear();
+    alert('Đã xóa bộ nhớ đệm thành công!');
+    window.location.reload();
+  };
 
   if (loading) return null;
 
-  const getStatusColor = () => {
-    switch (usage.status) {
-      case 'critical': return 'bg-rose-500';
-      case 'warning': return 'bg-amber-500';
-      default: return 'bg-blue-500';
-    }
-  };
-
-  const getStatusTextColor = () => {
-    switch (usage.status) {
-      case 'critical': return 'text-rose-600';
-      case 'warning': return 'text-amber-600';
-      default: return 'text-blue-600';
-    }
-  };
-
-  const getStatusBgColor = () => {
-    switch (usage.status) {
-      case 'critical': return 'bg-rose-50';
-      case 'warning': return 'bg-amber-50';
-      default: return 'bg-blue-50';
-    }
-  };
-
   return (
-    <div className={`p-4 rounded-xl border border-slate-100 ${getStatusBgColor()} transition-all`}>
+    <div className="px-4 py-2">
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Database className={`w-3.5 h-3.5 ${getStatusTextColor()}`} />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dung lượng dữ liệu</span>
-        </div>
-        <span className={`text-[10px] font-black ${getStatusTextColor()}`}>
-          {usage.percentage.toFixed(1)}%
+        <span className="text-[11px] font-bold uppercase tracking-tight text-slate-500">DUNG LƯỢNG LƯU TRỮ</span>
+        <span className="text-[11px] font-black text-slate-900">
+          {Math.round(usage.percentage)}%
         </span>
       </div>
       
-      <div className="w-full bg-slate-200 rounded-full h-1.5 mb-2 overflow-hidden">
+      <div className="w-full bg-slate-100 rounded-full h-2 mb-2 overflow-hidden">
         <motion.div 
           initial={{ width: 0 }}
           animate={{ width: `${usage.percentage}%` }}
-          className={`h-full rounded-full ${getStatusColor()}`}
+          className="h-full rounded-full bg-emerald-500"
         />
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[9px] text-slate-400 font-medium">
-          {usage.totalRows.toLocaleString()} / {ROW_LIMIT_ESTIMATE.toLocaleString()} dòng
+        <span className="text-[10px] text-slate-400 italic font-medium">
+          Đã dùng {usage.totalRows.toFixed(2)} MB / 5.00 MB
         </span>
-        {usage.status !== 'normal' && (
-          <div className="flex items-center gap-1">
-            <AlertTriangle className={`w-3 h-3 ${getStatusTextColor()}`} />
-            <span className={`text-[9px] font-bold ${getStatusTextColor()}`}>
-              {usage.status === 'critical' ? 'Sắp đầy!' : 'Cảnh báo'}
-            </span>
-          </div>
-        )}
+        <button 
+          onClick={handleClearCache}
+          className="text-[10px] font-black text-blue-600 hover:text-blue-700 uppercase tracking-tight"
+        >
+          XÓA ĐỆM
+        </button>
       </div>
-      
-      {usage.status === 'critical' && (
-        <p className="text-[8px] text-rose-500 mt-2 leading-tight font-medium">
-          Dữ liệu đã gần đạt giới hạn. Vui lòng xóa bớt lịch sử cũ hoặc nâng cấp gói Supabase.
-        </p>
-      )}
     </div>
   );
 }

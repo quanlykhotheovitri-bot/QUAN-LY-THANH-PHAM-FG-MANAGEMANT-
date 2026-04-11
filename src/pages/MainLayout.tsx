@@ -133,10 +133,25 @@ export default function MainLayout() {
               ))}
             </nav>
 
-            <div className="p-4 space-y-4">
-              <StorageUsage />
-              <div className="border-t border-slate-100 pt-4 text-center">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">FG Management v1.0</p>
+            <div className="mt-auto border-t border-slate-200 bg-slate-50/50">
+              <div className="py-4">
+                <StorageUsage />
+              </div>
+              
+              <div className="border-t border-slate-200 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold text-sm border-2 border-white shadow-sm">
+                    {user?.username.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-bold text-slate-900 truncate">
+                      {user?.username === 'admin' ? 'Admin User' : user?.username}
+                    </span>
+                    <span className="text-[10px] text-slate-500 truncate">
+                      {user?.email || 'quanlykhotheovitri@gmail.com'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.aside>

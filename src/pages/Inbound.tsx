@@ -2,7 +2,7 @@ import { useState, useEffect, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
-import { parseQRCode } from '../lib/utils';
+import { parseQRCode, clearAppCache } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
   Scan, 
@@ -501,6 +501,7 @@ export default function Inbound() {
       setMessage({ type: 'success', text: `Đã nhập kho thành công ${scannedItems.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
+      clearAppCache();
       
       if (activeTab === 'history') {
         fetchHistory();

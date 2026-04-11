@@ -15,6 +15,15 @@ export function formatDate(date: string | Date) {
   });
 }
 
+export function clearAppCache() {
+  const user = localStorage.getItem('fg_user');
+  localStorage.clear();
+  if (user) {
+    localStorage.setItem('fg_user', user);
+  }
+  sessionStorage.clear();
+}
+
 export function parseQRCode(qrData: string) {
   // Flexible formats: 
   // 1. SO-260202-0336|RPRO-260203-0325|1/9

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
-import { parseQRCode } from '../lib/utils';
+import { parseQRCode, clearAppCache } from '../lib/utils';
 import QRScanner from '../components/QRScanner';
 import { 
   Scan, 
@@ -232,6 +232,7 @@ export default function Transfer() {
       setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
+      clearAppCache();
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
     } finally {

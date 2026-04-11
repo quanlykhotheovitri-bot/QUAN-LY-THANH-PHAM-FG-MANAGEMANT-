@@ -356,7 +356,7 @@ export default function Inventory() {
 
           let skippedOverLimit = 0;
 
-          data.forEach(row => {
+          data.forEach((row, index) => {
             const so = String(row['SO'] || row['so'] || '').trim();
             const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
             const qrCodeFromExcel = String(row['QRCODE'] || row['qrcode'] || row['qr_code'] || '').trim();
@@ -364,7 +364,9 @@ export default function Inventory() {
             if (!so && !rpro && !qrCodeFromExcel) return;
 
             const sorproKey = `${so}|${rpro}`;
-            const key = qrCodeFromExcel || sorproKey;
+            // CRITICAL FIX: Use a unique key for each row if QR is missing to prevent overwriting
+            // different boxes/locations for the same SO/RPRO.
+            const key = qrCodeFromExcel || `${sorproKey}|row-${index}`;
             
             // Check if this QR already exists in DB - if yes, it's an update, not an add
             const isUpdate = qrCodeFromExcel && existingByQR.has(qrCodeFromExcel);
@@ -493,16 +495,18 @@ export default function Inventory() {
           ids: [item.id],
           quantity: item.quantity || 0,
           // For total_boxes, we take the value from the first item in the group
-          // since total_boxes represents the total for the entire SO/RPRO order
           total_boxes: item.total_boxes || 0,
-          locationCounts: { [item.location_path || 'Chưa có']: 1 },
+          locationCounts: {} as Record<string, number>,
           last_updated: item.last_updated
         };
+        const loc = item.location_path || 'Chưa có';
+        groups[key].locationCounts[loc] = 1;
       } else {
         groups[key].ids.push(item.id);
         groups[key].quantity += (item.quantity || 0);
-        // Do NOT sum total_boxes, as it's the same for all items in this SO/RPRO group
-        if (!groups[key].total_boxes && item.total_boxes) {
+        
+        // Use the largest total_boxes found in the group
+        if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {
           groups[key].total_boxes = item.total_boxes;
         }
         

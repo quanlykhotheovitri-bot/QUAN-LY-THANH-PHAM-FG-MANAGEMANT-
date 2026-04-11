@@ -527,7 +527,7 @@ export default function Inventory() {
         groups[key] = {
           ...item,
           ids: [item.id],
-          quantity: item.quantity || 0,
+          quantity: 1,
           // For total_boxes, we take the value from the first item in the group
           total_boxes: item.total_boxes || 0,
           locationCounts: {} as Record<string, number>,
@@ -537,7 +537,7 @@ export default function Inventory() {
         groups[key].locationCounts[loc] = 1;
       } else {
         groups[key].ids.push(item.id);
-        groups[key].quantity += (item.quantity || 0);
+        groups[key].quantity += 1;
         
         // Use the largest total_boxes found in the group
         if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {

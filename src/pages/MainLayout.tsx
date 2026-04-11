@@ -27,6 +27,7 @@ import Transfer from './Transfer';
 import InventoryCheck from './InventoryCheck';
 import PlasticBins from './PlasticBins';
 import Samples from './Samples';
+import StorageUsage from '../components/StorageUsage';
 
 type Tab = 'dashboard' | 'inbound' | 'outbound' | 'inventory' | 'transfer' | 'check' | 'history' | 'settings' | 'plastic-bins' | 'samples';
 
@@ -132,8 +133,11 @@ export default function MainLayout() {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-slate-100 text-center">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">FG Management v1.0</p>
+            <div className="p-4 space-y-4">
+              <StorageUsage />
+              <div className="border-t border-slate-100 pt-4 text-center">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">FG Management v1.0</p>
+              </div>
             </div>
           </motion.aside>
         )}

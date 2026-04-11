@@ -428,7 +428,7 @@ export default function Inventory() {
           // For total_boxes, we take the value from the first item in the group
           // since total_boxes represents the total for the entire SO/RPRO order
           total_boxes: item.total_boxes || 0,
-          locations: new Set([item.location_path]),
+          locationCounts: { [item.location_path || 'Chưa có']: 1 },
           last_updated: item.last_updated
         };
       } else {
@@ -438,17 +438,26 @@ export default function Inventory() {
         if (!groups[key].total_boxes && item.total_boxes) {
           groups[key].total_boxes = item.total_boxes;
         }
-        if (item.location_path) groups[key].locations.add(item.location_path);
+        
+        const loc = item.location_path || 'Chưa có';
+        groups[key].locationCounts[loc] = (groups[key].locationCounts[loc] || 0) + 1;
+        
         if (new Date(item.last_updated) > new Date(groups[key].last_updated)) {
           groups[key].last_updated = item.last_updated;
         }
       }
     });
 
-    return Object.values(groups).map(group => ({
-      ...group,
-      location_path: Array.from(group.locations).filter(Boolean).sort().join(', ')
-    }));
+    return Object.values(groups).map(group => {
+      const locationStrings = Object.entries(group.locationCounts)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([loc, count]) => `${loc}(${count})`);
+
+      return {
+        ...group,
+        location_path: locationStrings.join(', ')
+      };
+    });
   }, [inventory]);
 
   const filteredInventory = groupedInventory;

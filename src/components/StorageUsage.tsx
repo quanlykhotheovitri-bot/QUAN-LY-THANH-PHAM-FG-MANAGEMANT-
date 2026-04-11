@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Database, AlertTriangle, Info } from 'lucide-react';
 import { motion } from 'motion/react';
+import DataArchiver from './DataArchiver';
 
 export default function StorageUsage() {
   const [usage, setUsage] = useState<{
@@ -10,6 +11,8 @@ export default function StorageUsage() {
     status: 'normal' | 'warning' | 'critical';
   }>({ percentage: 0, totalRows: 0, status: 'normal' });
   const [loading, setLoading] = useState(true);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [hasWarned, setHasWarned] = useState(false);
 
   // Supabase Free Tier limits are roughly 500MB.
   // We estimate row size to be around 0.5KB on average (including indexes).
@@ -50,6 +53,12 @@ export default function StorageUsage() {
       if (percentage > 90) status = 'critical';
       else if (percentage > 70) status = 'warning';
 
+      // Auto-trigger warning at 80%
+      if (percentage >= 80 && !hasWarned) {
+        setIsArchiveOpen(true);
+        setHasWarned(true);
+      }
+
       setUsage({ percentage, totalRows: usedMB, status });
     } catch (error) {
       console.error('Error fetching storage usage:', error);
@@ -81,7 +90,7 @@ export default function StorageUsage() {
         <motion.div 
           initial={{ width: 0 }}
           animate={{ width: `${usage.percentage}%` }}
-          className="h-full rounded-full bg-emerald-500"
+          className={`h-full rounded-full ${usage.percentage >= 80 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}
         />
       </div>
 
@@ -89,13 +98,33 @@ export default function StorageUsage() {
         <span className="text-[10px] text-slate-400 italic font-medium">
           Đã dùng {usage.totalRows.toFixed(2)} MB / 5.00 MB
         </span>
-        <button 
-          onClick={handleClearCache}
-          className="text-[10px] font-black text-blue-600 hover:text-blue-700 uppercase tracking-tight"
-        >
-          XÓA ĐỆM
-        </button>
+        <div className="flex items-center gap-3">
+          {usage.percentage >= 80 && (
+            <button 
+              onClick={() => setIsArchiveOpen(true)}
+              className="text-[10px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-tight flex items-center gap-1"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              SAO LƯU
+            </button>
+          )}
+          <button 
+            onClick={handleClearCache}
+            className="text-[10px] font-black text-blue-600 hover:text-blue-700 uppercase tracking-tight"
+          >
+            XÓA ĐỆM
+          </button>
+        </div>
       </div>
+
+      <DataArchiver 
+        isOpen={isArchiveOpen} 
+        onClose={() => setIsArchiveOpen(false)}
+        onSuccess={() => {
+          fetchUsage();
+          setHasWarned(false);
+        }}
+      />
     </div>
   );
 }

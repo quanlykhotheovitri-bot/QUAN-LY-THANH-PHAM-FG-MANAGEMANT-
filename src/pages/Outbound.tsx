@@ -698,10 +698,10 @@ export default function Outbound() {
     successFiles.forEach(file => {
       file.data.forEach(item => {
         allPlItemsToInsert.push({
-          pl_no: item.plNo,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
+          pl_no: item.plNo?.trim() || 'N/A',
+          so: item.so?.trim() || '',
+          rpro: item.rpro?.trim() || '',
+          kh: item.kh?.trim() || '',
           qty: item.outQty,
           total_boxes: item.totalBoxes
         });
@@ -1005,11 +1005,9 @@ export default function Outbound() {
         if (diff > 0) statusText = `Thiếu (${diff})`;
         else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
 
-        const invMatch = (trimmedSo && trimmedRpro) 
-          ? plItemStats.compositeInv.get(`${trimmedSo}|${trimmedRpro}`)
-          : trimmedRpro 
-            ? plItemStats.rproInv.get(trimmedRpro) 
-            : plItemStats.soInv.get(trimmedSo);
+        const invMatch = trimmedRpro 
+          ? plItemStats.rproInv.get(trimmedRpro) 
+          : (trimmedSo ? plItemStats.soInv.get(trimmedSo) : null);
 
         return {
           type: 'PL',
@@ -1689,11 +1687,9 @@ export default function Outbound() {
                             statusColor = 'text-amber-600';
                           }
 
-                          const invMatch = (trimmedSo && trimmedRpro) 
-                            ? plItemStats.compositeInv.get(`${trimmedSo}|${trimmedRpro}`)
-                            : trimmedRpro 
-                              ? plItemStats.rproInv.get(trimmedRpro) 
-                              : plItemStats.soInv.get(trimmedSo);
+                          const invMatch = trimmedRpro 
+                            ? plItemStats.rproInv.get(trimmedRpro) 
+                            : (trimmedSo ? plItemStats.soInv.get(trimmedSo) : null);
                           const location = invMatch ? Array.from(invMatch.locations).join(', ') : 'N/A';
 
                           return (

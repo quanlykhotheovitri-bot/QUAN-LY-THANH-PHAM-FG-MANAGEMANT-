@@ -501,21 +501,94 @@ export default function Inventory() {
     </div>
   );
 
-  const exportData = (format: 'xlsx' | 'csv') => {
-    const data = filteredInventory.map(item => ({
-      'SO': item.so,
-      'RPRO': item.rpro,
-      'KHÁCH HÀNG': item.kh,
-      'LOẠI THÙNG': item.box_type,
-      'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
-      'VỊ TRÍ': item.location_path,
-      'NGÀY NHẬP': formatDate(item.last_updated)
-    }));
+  const exportData = async (format: 'xlsx' | 'csv') => {
+    setLoading(true);
+    setIsLoading(true);
+    setMessage({ type: 'success', text: 'Đang chuẩn bị dữ liệu xuất file...' });
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'TonKho');
-    XLSX.writeFile(wb, `TonKho_Export_${new Date().toISOString().split('T')[0]}.${format}`);
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('inventory_balances')
+          .select('*')
+          .order('last_updated', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allData = [...allData, ...data];
+          offset += limit;
+          setMessage({ type: 'success', text: `Đang tải dữ liệu... ${allData.length.toLocaleString()} dòng` });
+        }
+        
+        // Safety break
+        if (allData.length > 50000) break;
+      }
+
+      if (allData.length === 0) {
+        setMessage({ type: 'error', text: 'Không có dữ liệu để xuất.' });
+        return;
+      }
+
+      // Group data for export (similar to groupedInventory logic)
+      const groups: { [key: string]: any } = {};
+      allData.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        if (!groups[key]) {
+          groups[key] = {
+            ...item,
+            quantity: item.quantity || 1,
+            locationCounts: {} as Record<string, number>
+          };
+          const loc = item.location_path || 'Chưa có';
+          groups[key].locationCounts[loc] = 1;
+        } else {
+          groups[key].quantity += (item.quantity || 1);
+          const loc = item.location_path || 'Chưa có';
+          groups[key].locationCounts[loc] = (groups[key].locationCounts[loc] || 0) + 1;
+          if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {
+            groups[key].total_boxes = item.total_boxes;
+          }
+        }
+      });
+
+      const finalExportData = Object.values(groups).map(group => {
+        const locationStrings = Object.entries(group.locationCounts)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([loc, count]) => `${loc}(${count})`);
+
+        return {
+          'SO': group.so,
+          'RPRO': group.rpro,
+          'KHÁCH HÀNG': group.kh,
+          'LOẠI THÙNG': group.box_type,
+          'SỐ THÙNG ĐƠN HÀNG': group.total_boxes > 0 ? `${group.quantity} / ${group.total_boxes}` : group.quantity,
+          'VỊ TRÍ': locationStrings.join(', '),
+          'NGÀY NHẬP': formatDate(group.last_updated)
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(finalExportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'TonKho');
+      XLSX.writeFile(wb, `TonKho_ToanBo_${new Date().toISOString().split('T')[0]}.${format}`);
+      
+      setMessage({ type: 'success', text: `Đã xuất thành công ${finalExportData.length} nhóm hàng.` });
+    } catch (error: any) {
+      console.error('Export error:', error);
+      setMessage({ type: 'error', text: 'Lỗi khi xuất file: ' + error.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
   };
 
   const downloadTemplate = () => {

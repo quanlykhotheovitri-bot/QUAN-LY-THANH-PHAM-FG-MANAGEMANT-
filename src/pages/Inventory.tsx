@@ -313,41 +313,6 @@ export default function Inventory() {
 
           setImportProgress({ current: 0, total: totalItems });
 
-          // 1. Fetch all existing items to check for duplicates
-          // We'll map by QRCODE (primary) and SO|RPRO (secondary fallback)
-          const existingByQR = new Map<string, any>(); // qr_code -> full item
-          const existingBySORPRO = new Map<string, any[]>(); // so|rpro -> list of items
-          
-          let offset = 0;
-          const fetchLimit = 5000;
-          let hasMoreExisting = true;
-          
-          setMessage({ type: 'success', text: 'Đang kiểm tra dữ liệu tồn kho hiện có...' });
-          
-          while (hasMoreExisting) {
-            const { data: batch, error: fetchError } = await supabase
-              .from('inventory_balances')
-              .select('*')
-              .range(offset, offset + fetchLimit - 1);
-            
-            if (fetchError) throw fetchError;
-            if (!batch || batch.length === 0) {
-              hasMoreExisting = false;
-            } else {
-              batch.forEach(item => {
-                if (item.qr_code) {
-                  existingByQR.set(item.qr_code, item);
-                }
-                const key = `${item.so || ''}|${item.rpro || ''}`;
-                if (!existingBySORPRO.has(key)) {
-                  existingBySORPRO.set(key, []);
-                }
-                existingBySORPRO.get(key)!.push(item);
-              });
-              offset += fetchLimit;
-            }
-          }
-
           // 2. Fetch expected quantities from source_import_lines
           const uniqueSORPROs = new Set<string>();
           data.forEach(row => {
@@ -372,14 +337,11 @@ export default function Inventory() {
           }
 
           // 3. Process Excel data
-          // We use a map to deduplicate within the file itself
-          const fileDataMap = new Map<string, any>();
+          const itemsToUpsert: any[] = [];
           const currentCountInFile = new Map<string, number>();
-          const usedExistingIds = new Set<string>();
 
           // Track current counts in DB to check against limits
           const dbCountMap = new Map<string, number>();
-          // Let's fetch actual counts for the relevant SO/RPROs
           if (uniqueSORPROs.size > 0) {
             const soList = Array.from(uniqueSORPROs).map(k => k.split('|')[0]).filter(Boolean);
             const rproList = Array.from(uniqueSORPROs).map(k => k.split('|')[1]).filter(Boolean);
@@ -406,32 +368,15 @@ export default function Inventory() {
 
             const sorproKey = `${so}|${rpro}`;
             
-            // 3a. Determine if this row matches an existing record
-            let matchedItem: any = null;
-            if (qrCodeFromExcel) {
-              matchedItem = existingByQR.get(qrCodeFromExcel);
-            }
-            
-            // If no QR match, try matching by SO|RPRO if QR is missing in Excel
-            if (!matchedItem && !qrCodeFromExcel) {
-              const possibleItems = existingBySORPRO.get(sorproKey) || [];
-              matchedItem = possibleItems.find(item => !usedExistingIds.has(item.id));
-            }
-
-            const isUpdate = !!matchedItem;
-            if (matchedItem) {
-              usedExistingIds.add(matchedItem.id);
-            }
-            
-            // 3b. Check limits for NEW items
-            if (!isUpdate) {
+            // Check limits for NEW items (only if we don't have a QR code to match)
+            if (!qrCodeFromExcel) {
               const expected = expectedMap.get(sorproKey) || 0;
               const currentInDB = dbCountMap.get(sorproKey) || 0;
               const currentInFile = currentCountInFile.get(sorproKey) || 0;
 
               if (expected > 0 && (currentInDB + currentInFile) >= expected) {
                 skippedOverLimit++;
-                return; // Skip this row as it exceeds the limit
+                return;
               }
               currentCountInFile.set(sorproKey, currentInFile + 1);
             }
@@ -440,23 +385,21 @@ export default function Inventory() {
             const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
             const kh = row['KHÁCH HÀNG'] || row['khách hàng'] || row['kh'] || '';
             
-            let quantity = 0;
+            let quantity = 1;
             let totalBoxes = 0;
-            const qtyStr = String(row['SỐ THÙNG ĐƠN HÀNG'] || row['số thùng đơn hàng'] || row['items_count'] || '0');
+            const qtyStr = String(row['SỐ THÙNG ĐƠN HÀNG'] || row['số thùng đơn hàng'] || row['items_count'] || '');
+            
             if (qtyStr.includes('/')) {
               const parts = qtyStr.split('/');
-              quantity = parseInt(parts[0].trim()) || 0;
+              // If it's "1/10", quantity is 1 (one box)
+              quantity = 1; 
               totalBoxes = parseInt(parts[1].trim()) || 0;
-            } else {
-              quantity = parseInt(qtyStr) || 0;
+            } else if (qtyStr) {
+              quantity = parseInt(qtyStr) || 1;
               totalBoxes = parseInt(String(row['total_boxes'] || '0')) || 0;
             }
 
-            // CRITICAL FIX: Use a unique key for each row in fileDataMap
-            const fileKey = qrCodeFromExcel || `${sorproKey}|row-${index}`;
-
-            fileDataMap.set(fileKey, {
-              id: matchedItem?.id,
+            itemsToUpsert.push({
               so,
               rpro,
               kh,
@@ -464,15 +407,15 @@ export default function Inventory() {
               location_path: location,
               quantity,
               total_boxes: totalBoxes || expectedMap.get(sorproKey) || 0,
-              qr_code: qrCodeFromExcel || matchedItem?.qr_code || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
+              qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
               last_updated: new Date().toISOString()
             });
           });
 
-          // 4. Prepare final list for upsert
-          const itemsToUpsert = Array.from(fileDataMap.values());
-
           const totalToProcess = itemsToUpsert.length;
+          if (totalToProcess === 0) {
+            throw new Error('Không có dữ liệu hợp lệ để nhập');
+          }
           setImportProgress({ current: 0, total: totalToProcess });
 
           // 4. Chunking upserts
@@ -527,7 +470,7 @@ export default function Inventory() {
         groups[key] = {
           ...item,
           ids: [item.id],
-          quantity: 1,
+          quantity: item.quantity || 1,
           // For total_boxes, we take the value from the first item in the group
           total_boxes: item.total_boxes || 0,
           locationCounts: {} as Record<string, number>,
@@ -537,7 +480,7 @@ export default function Inventory() {
         groups[key].locationCounts[loc] = 1;
       } else {
         groups[key].ids.push(item.id);
-        groups[key].quantity += 1;
+        groups[key].quantity += (item.quantity || 1);
         
         // Use the largest total_boxes found in the group
         if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {

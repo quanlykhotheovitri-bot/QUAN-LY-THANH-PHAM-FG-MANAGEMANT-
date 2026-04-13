@@ -59,8 +59,8 @@ export interface PlasticBinReturn {
   return_date: string;
   qrcode: string;
   customer_name: string;
-  bin_type: string;
-  quantity: number;
+  quantity_large: number;
+  quantity_small: number;
   created_at?: string;
 }
 

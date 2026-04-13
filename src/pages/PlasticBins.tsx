@@ -44,7 +44,7 @@ export default function PlasticBins() {
   // Return Edit states
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [editingReturn, setEditingReturn] = useState<any | null>(null);
-  const [returnForm, setReturnForm] = useState({ qrcode: '', customer_name: '', bin_type: '', quantity: 1 });
+  const [returnForm, setReturnForm] = useState({ qrcode: '', customer_name: '', quantity_large: 1, quantity_small: 0 });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -116,8 +116,8 @@ export default function PlasticBins() {
         return_date: now,
         qrcode: qr,
         customer_name: found ? found.name : 'Chưa xác định',
-        bin_type: 'Thùng Nhựa',
-        quantity: 1
+        quantity_large: 1,
+        quantity_small: 0
       });
     });
 
@@ -239,8 +239,8 @@ export default function PlasticBins() {
       const { error } = await supabase
         .from('plastic_bin_returns')
         .update({
-          bin_type: returnForm.bin_type,
-          quantity: returnForm.quantity,
+          quantity_large: returnForm.quantity_large,
+          quantity_small: returnForm.quantity_small,
           customer_name: returnForm.customer_name
         })
         .eq('id', editingReturn.id);
@@ -267,8 +267,8 @@ export default function PlasticBins() {
       'Ngày': new Date(item.return_date).toLocaleDateString('vi-VN'),
       'QR Code': item.qrcode,
       'Khách hàng': item.customer_name,
-      'Loại thùng': item.bin_type,
-      'Số lượng': item.quantity
+      'Thùng Lớn': item.quantity_large,
+      'Thùng Nhỏ': item.quantity_small
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -453,8 +453,8 @@ export default function PlasticBins() {
                         <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">NGÀY</th>
                         <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">QRCODE</th>
                         <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">KHÁCH HÀNG</th>
-                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">LOẠI THÙNG</th>
-                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">SỐ LƯỢNG</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">THÙNG LỚN</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">THÙNG NHỎ</th>
                         <th className="px-6 py-4 text-xs font-black uppercase tracking-widest w-24 text-center">THAO TÁC</th>
                       </tr>
                     </thead>
@@ -467,22 +467,26 @@ export default function PlasticBins() {
                           </td>
                           <td className="px-6 py-4 text-sm font-black text-blue-600">{item.qrcode}</td>
                           <td className="px-6 py-4 text-sm font-bold text-slate-900">{item.customer_name}</td>
-                          <td className="px-6 py-4 text-sm">
-                            <input
-                              type="text"
-                              value={item.bin_type}
-                              onChange={(e) => updateScannedItem(item.id, 'bin_type', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-sm focus:border-blue-500 outline-none"
-                            />
+                          <td className="px-6 py-4 text-sm font-black text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-slate-400">x</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.quantity_large}
+                                onChange={(e) => updateScannedItem(item.id, 'quantity_large', parseInt(e.target.value) || 0)}
+                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none"
+                              />
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-sm font-black text-center">
                             <div className="flex items-center justify-center gap-1">
                               <span className="text-slate-400">x</span>
                               <input
                                 type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(e) => updateScannedItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                                min="0"
+                                value={item.quantity_small}
+                                onChange={(e) => updateScannedItem(item.id, 'quantity_small', parseInt(e.target.value) || 0)}
                                 className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none"
                               />
                             </div>
@@ -507,9 +511,11 @@ export default function PlasticBins() {
                           </td>
                           <td className="px-6 py-4 text-sm font-medium text-slate-500">{item.qrcode}</td>
                           <td className="px-6 py-4 text-sm font-medium text-slate-600">{item.customer_name}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{item.bin_type}</td>
                           <td className="px-6 py-4 text-sm font-bold text-center text-slate-500">
-                            x {item.quantity}
+                            x {item.quantity_large ?? item.quantity ?? 0}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-bold text-center text-slate-500">
+                            x {item.quantity_small ?? 0}
                           </td>
                           <td className="px-6 py-4 text-center">
                             <div className="flex flex-col items-center gap-1">
@@ -525,8 +531,8 @@ export default function PlasticBins() {
                                       setReturnForm({
                                         qrcode: item.qrcode,
                                         customer_name: item.customer_name,
-                                        bin_type: item.bin_type,
-                                        quantity: item.quantity
+                                        quantity_large: item.quantity_large,
+                                        quantity_small: item.quantity_small
                                       });
                                       setShowReturnForm(true);
                                     }}
@@ -775,23 +781,24 @@ export default function PlasticBins() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Loại thùng</label>
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Thùng Lớn</label>
                   <input
-                    type="text"
+                    type="number"
                     required
-                    value={returnForm.bin_type}
-                    onChange={(e) => setReturnForm({ ...returnForm, bin_type: e.target.value })}
+                    min="0"
+                    value={returnForm.quantity_large}
+                    onChange={(e) => setReturnForm({ ...returnForm, quantity_large: parseInt(e.target.value) || 0 })}
                     className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-bold focus:border-blue-500 focus:ring-0 transition-all"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Số lượng</label>
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Thùng Nhỏ</label>
                   <input
                     type="number"
                     required
-                    min="1"
-                    value={returnForm.quantity}
-                    onChange={(e) => setReturnForm({ ...returnForm, quantity: parseInt(e.target.value) || 1 })}
+                    min="0"
+                    value={returnForm.quantity_small}
+                    onChange={(e) => setReturnForm({ ...returnForm, quantity_small: parseInt(e.target.value) || 0 })}
                     className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-bold focus:border-blue-500 focus:ring-0 transition-all"
                   />
                 </div>

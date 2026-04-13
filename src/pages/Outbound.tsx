@@ -1044,6 +1044,23 @@ export default function Outbound() {
     }
   };
 
+  const handleRefreshPLLocations = async () => {
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      await Promise.all([
+        fetchInventoryBalances(),
+        fetchCurrentPLItems()
+      ]);
+      setMessage({ type: 'success', text: 'Đã cập nhật vị trí từ tồn kho mới nhất.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi cập nhật vị trí: ' + error.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
   const handlePrintPL = () => {
     if (filteredPlItems.length === 0) return;
 
@@ -1575,6 +1592,14 @@ export default function Outbound() {
                       >
                         <Download className="w-3 h-3 text-emerald-600" />
                         CSV
+                      </button>
+                      <button 
+                        onClick={handleRefreshPLLocations}
+                        disabled={loading}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-bold hover:bg-amber-600 transition-all disabled:opacity-50"
+                      >
+                        <MapPin className="w-3 h-3" />
+                        CẬP NHẬT VỊ TRÍ
                       </button>
                       <button 
                         onClick={handlePrintPL}

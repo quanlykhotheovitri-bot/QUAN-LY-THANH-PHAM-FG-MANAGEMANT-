@@ -645,7 +645,7 @@ export default function Inventory() {
             </div>
           </div>
           <div className="text-sm font-black text-slate-500 uppercase tracking-widest">
-            Hiển thị: <span className="text-blue-600">{filteredInventory.length}</span> nhóm hàng ({totalCount} kiện)
+            Hiển thị: <span className="text-blue-600">{filteredInventory.length}</span> đơn hàng ({totalCount} thùng)
           </div>
         </div>
 

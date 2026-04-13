@@ -26,26 +26,21 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(200);
+  const [pageSize, setPageSize] = useState(5000);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
-
-  useEffect(() => {
     fetchInventory();
-  }, [currentPage, searchTerm]);
+  }, [searchTerm]);
 
   async function fetchInventory() {
     setLoading(true);
     setIsLoading(true);
-    const from = (currentPage - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const from = 0;
+    const to = pageSize - 1;
 
     let query = supabase
       .from('inventory_balances')
@@ -228,7 +223,6 @@ export default function Inventory() {
       setInventory([]);
       setTotalCount(0);
       setSelectedItems(new Set());
-      setCurrentPage(1);
       
     } catch (error: any) {
       console.error('Delete all error:', error);
@@ -452,55 +446,6 @@ export default function Inventory() {
 
   const filteredInventory = groupedInventory;
 
-  const totalPages = Math.ceil(totalCount / pageSize);
-
-  const PaginationUI = () => (
-    <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200 gap-4">
-      <div className="flex items-center gap-4">
-        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-          Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong {totalCount}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Số dòng:</span>
-          <select 
-            value={pageSize} 
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="text-xs font-bold bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-blue-400"
-          >
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-            <option value={1000}>1000</option>
-            <option value={5000}>5000 (Chậm)</option>
-          </select>
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-          disabled={currentPage === 1}
-          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-        >
-          TRƯỚC
-        </button>
-        <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
-          TRANG {currentPage} / {totalPages || 1}
-        </div>
-        <button
-          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-          disabled={currentPage === totalPages || totalPages === 0}
-          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-        >
-          SAU
-        </button>
-      </div>
-    </div>
-  );
-
   const exportData = async (format: 'xlsx' | 'csv') => {
     setLoading(true);
     setIsLoading(true);
@@ -700,7 +645,7 @@ export default function Inventory() {
             </div>
           </div>
           <div className="text-sm font-black text-slate-500 uppercase tracking-widest">
-            Tổng cộng: <span className="text-blue-600">{filteredInventory.length}</span> nhóm hàng
+            Hiển thị: <span className="text-blue-600">{filteredInventory.length}</span> nhóm hàng ({totalCount} kiện)
           </div>
         </div>
 
@@ -802,7 +747,6 @@ export default function Inventory() {
             )}
           </table>
         </div>
-        <PaginationUI />
       </div>
     </div>
   );

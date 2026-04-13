@@ -313,73 +313,15 @@ export default function Inventory() {
 
           setImportProgress({ current: 0, total: totalItems });
 
-          // 2. Fetch expected quantities from source_import_lines
-          const uniqueSORPROs = new Set<string>();
-          data.forEach(row => {
-            const so = String(row['SO'] || row['so'] || '').trim();
-            const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
-            if (so || rpro) uniqueSORPROs.add(`${so}|${rpro}`);
-          });
-
-          const expectedMap = new Map<string, number>();
-          if (uniqueSORPROs.size > 0) {
-            const soList = Array.from(uniqueSORPROs).map(k => k.split('|')[0]).filter(Boolean);
-            const rproList = Array.from(uniqueSORPROs).map(k => k.split('|')[1]).filter(Boolean);
-            
-            const { data: sourceData } = await supabase
-              .from('source_import_lines')
-              .select('so, rpro, quantity')
-              .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
-            
-            sourceData?.forEach(s => {
-              expectedMap.set(`${s.so || ''}|${s.rpro || ''}`, s.quantity || 0);
-            });
-          }
-
           // 3. Process Excel data
           const itemsToUpsert: any[] = [];
-          const currentCountInFile = new Map<string, number>();
-
-          // Track current counts in DB to check against limits
-          const dbCountMap = new Map<string, number>();
-          if (uniqueSORPROs.size > 0) {
-            const soList = Array.from(uniqueSORPROs).map(k => k.split('|')[0]).filter(Boolean);
-            const rproList = Array.from(uniqueSORPROs).map(k => k.split('|')[1]).filter(Boolean);
-            
-            const { data: countsData } = await supabase
-              .from('inventory_balances')
-              .select('so, rpro')
-              .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
-            
-            countsData?.forEach(c => {
-              const key = `${c.so || ''}|${c.rpro || ''}`;
-              dbCountMap.set(key, (dbCountMap.get(key) || 0) + 1);
-            });
-          }
-
-          let skippedOverLimit = 0;
-
+          
           data.forEach((row, index) => {
             const so = String(row['SO'] || row['so'] || '').trim();
             const rpro = String(row['RPRO'] || row['rpro'] || '').trim();
             const qrCodeFromExcel = String(row['QRCODE'] || row['qrcode'] || row['qr_code'] || '').trim();
             
             if (!so && !rpro && !qrCodeFromExcel) return;
-
-            const sorproKey = `${so}|${rpro}`;
-            
-            // Check limits for NEW items (only if we don't have a QR code to match)
-            if (!qrCodeFromExcel) {
-              const expected = expectedMap.get(sorproKey) || 0;
-              const currentInDB = dbCountMap.get(sorproKey) || 0;
-              const currentInFile = currentCountInFile.get(sorproKey) || 0;
-
-              if (expected > 0 && (currentInDB + currentInFile) >= expected) {
-                skippedOverLimit++;
-                return;
-              }
-              currentCountInFile.set(sorproKey, currentInFile + 1);
-            }
 
             const boxType = row['LOẠI THÙNG'] || row['loại thùng'] || row['box_type'] || '';
             const location = row['VỊ TRÍ'] || row['vị trí'] || row['location_path'] || '';
@@ -391,7 +333,6 @@ export default function Inventory() {
             
             if (qtyStr.includes('/')) {
               const parts = qtyStr.split('/');
-              // If it's "1/10", quantity is 1 (one box)
               quantity = 1; 
               totalBoxes = parseInt(parts[1].trim()) || 0;
             } else if (qtyStr) {
@@ -406,8 +347,9 @@ export default function Inventory() {
               box_type: boxType,
               location_path: location,
               quantity,
-              total_boxes: totalBoxes || expectedMap.get(sorproKey) || 0,
-              qr_code: qrCodeFromExcel || `${so}|${rpro}|${Math.random().toString(36).substring(2, 7)}`,
+              total_boxes: totalBoxes || 0,
+              // Nếu không có QR, tạo mã định danh dựa trên SO, RPRO và số thứ tự dòng để tránh trùng lặp khi nhập lại cùng 1 file
+              qr_code: qrCodeFromExcel || `${so}|${rpro}|BOX-${index + 1}`,
               last_updated: new Date().toISOString()
             });
           });
@@ -439,7 +381,7 @@ export default function Inventory() {
 
           setMessage({ 
             type: 'success', 
-            text: `Đã cập nhật thành công ${successCount} mục tồn kho.${skippedOverLimit > 0 ? ` Đã chặn ${skippedOverLimit} kiện hàng vượt định mức.` : ''}` 
+            text: `Đã cập nhật thành công ${successCount} mục tồn kho.` 
           });
           fetchInventory();
         } catch (error: any) {

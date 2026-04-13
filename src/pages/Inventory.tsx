@@ -423,10 +423,14 @@ export default function Inventory() {
     
     inventory.forEach(item => {
       // Group by combination of SO and RPRO
-      const key = `${item.so || ''}|${item.rpro || ''}`;
+      const trimmedSo = item.so?.trim() || '';
+      const trimmedRpro = item.rpro?.trim() || '';
+      const key = `${trimmedSo}|${trimmedRpro}`;
       if (!groups[key]) {
         groups[key] = {
           ...item,
+          so: trimmedSo,
+          rpro: trimmedRpro,
           ids: [item.id],
           quantity: item.quantity || 1,
           // For total_boxes, we take the value from the first item in the group

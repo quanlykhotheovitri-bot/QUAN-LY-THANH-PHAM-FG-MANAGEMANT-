@@ -105,10 +105,13 @@ export default function Outbound() {
     inventoryBalances.forEach(inv => {
       if (inv.quantity <= 0) return;
       
-      if (inv.rpro && !rproInv.has(inv.rpro)) rproInv.set(inv.rpro, inv);
-      if (inv.so && !soInv.has(inv.so)) soInv.set(inv.so, inv);
-      if (inv.so && inv.rpro) {
-        const key = `${inv.so}|${inv.rpro}`;
+      const trimmedRpro = inv.rpro?.trim();
+      const trimmedSo = inv.so?.trim();
+      
+      if (trimmedRpro && !rproInv.has(trimmedRpro)) rproInv.set(trimmedRpro, inv);
+      if (trimmedSo && !soInv.has(trimmedSo)) soInv.set(trimmedSo, inv);
+      if (trimmedSo && trimmedRpro) {
+        const key = `${trimmedSo}|${trimmedRpro}`;
         if (!compositeInv.has(key)) compositeInv.set(key, inv);
       }
     });
@@ -882,16 +885,16 @@ export default function Outbound() {
       const { error } = await supabase
         .from('current_scanned_items')
         .update({
-          qr_code: editingItem.qrCode,
-          so: editingItem.so,
-          rpro: editingItem.rpro,
-          kh: editingItem.kh,
+          qr_code: editingItem.qrCode?.trim(),
+          so: editingItem.so?.trim(),
+          rpro: editingItem.rpro?.trim(),
+          kh: editingItem.kh?.trim(),
           total_boxes: editingItem.totalBoxes,
           status: editingItem.status,
           note: editingItem.note,
           out_qty: editingItem.outQty,
-          pl_no: editingItem.plNo,
-          location_path: editingItem.locationPath,
+          pl_no: editingItem.plNo?.trim(),
+          location_path: editingItem.locationPath?.trim(),
           is_saved: false
         })
         .eq('id', editingItem.id);
@@ -905,10 +908,10 @@ export default function Outbound() {
       const { error } = await supabase
         .from('current_pl_items')
         .update({
-          pl_no: editingItem.plNo,
-          so: editingItem.so,
-          rpro: editingItem.rpro,
-          kh: editingItem.kh,
+          pl_no: editingItem.plNo?.trim(),
+          so: editingItem.so?.trim(),
+          rpro: editingItem.rpro?.trim(),
+          kh: editingItem.kh?.trim(),
           qty: editingItem.qty,
           total_boxes: editingItem.totalBoxes
         })
@@ -939,24 +942,27 @@ export default function Outbound() {
     try {
       // Pre-calculate scan counts and inventory matches to avoid O(N*M) in the map
       const itemsToSave = plItems.map(item => {
-        const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+        const trimmedSo = item.so?.trim() || '';
+        const trimmedRpro = item.rpro?.trim() || '';
+        
+        const scanCount = trimmedRpro ? (plItemStats.rproCounts.get(trimmedRpro) || 0) : (plItemStats.soCounts.get(trimmedSo) || 0);
 
         const diff = item.totalBoxes - scanCount;
         let statusText = 'OK';
         if (diff > 0) statusText = `Thiếu (${diff})`;
         else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
 
-        const invMatch = (item.so && item.rpro) 
-          ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
-          : item.rpro 
-            ? plItemStats.rproInv.get(item.rpro) 
-            : plItemStats.soInv.get(item.so);
+        const invMatch = (trimmedSo && trimmedRpro) 
+          ? plItemStats.compositeInv.get(`${trimmedSo}|${trimmedRpro}`)
+          : trimmedRpro 
+            ? plItemStats.rproInv.get(trimmedRpro) 
+            : plItemStats.soInv.get(trimmedSo);
 
         return {
           type: 'PL',
-          qr_code: `${item.so}|${item.rpro}`,
-          so: item.so,
-          rpro: item.rpro,
+          qr_code: `${trimmedSo}|${trimmedRpro}`,
+          so: trimmedSo,
+          rpro: trimmedRpro,
           kh: item.kh,
           pl_no: item.plNo,
           quantity: item.totalBoxes,
@@ -1556,7 +1562,10 @@ export default function Outbound() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {plItems.map((item, index) => {
-                          const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+                          const trimmedSo = item.so?.trim();
+                          const trimmedRpro = item.rpro?.trim();
+                          
+                          const scanCount = trimmedRpro ? (plItemStats.rproCounts.get(trimmedRpro) || 0) : (plItemStats.soCounts.get(trimmedSo) || 0);
 
                           const diff = item.totalBoxes - scanCount;
                           let statusText = 'ok';
@@ -1570,11 +1579,11 @@ export default function Outbound() {
                             statusColor = 'text-amber-600';
                           }
 
-                          const invMatch = (item.so && item.rpro) 
-                            ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
-                            : item.rpro 
-                              ? plItemStats.rproInv.get(item.rpro) 
-                              : plItemStats.soInv.get(item.so);
+                          const invMatch = (trimmedSo && trimmedRpro) 
+                            ? plItemStats.compositeInv.get(`${trimmedSo}|${trimmedRpro}`)
+                            : trimmedRpro 
+                              ? plItemStats.rproInv.get(trimmedRpro) 
+                              : plItemStats.soInv.get(trimmedSo);
                           const location = invMatch ? invMatch.location_path : 'N/A';
 
                           return (

@@ -76,7 +76,13 @@ export default function Inventory() {
         }
       }
 
-      setInventory(allData);
+      setInventory(allData.map(inv => ({
+        ...inv,
+        so: inv.so?.trim() || '',
+        rpro: inv.rpro?.trim() || '',
+        kh: inv.kh?.trim() || '',
+        location_path: inv.location_path?.trim() || ''
+      })));
       setTotalCount(totalInDB);
     } catch (error: any) {
       const errorMsg = error.message?.includes('Failed to fetch')

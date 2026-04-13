@@ -27,6 +27,7 @@ export interface InventoryBalance {
   location_path: string;
   total_boxes?: number;
   last_updated: string;
+  locations?: Set<string>;
 }
 
 export interface SourceImportLine {

@@ -171,7 +171,12 @@ export default function Inbound() {
       }
 
       setOrderStatusMap(statusMap);
-      setHistoryData(data);
+      setHistoryData(data.map(item => ({
+        ...item,
+        so: item.so?.trim() || '',
+        rpro: item.rpro?.trim() || '',
+        qr_code: item.qr_code?.trim() || ''
+      })));
       if (count !== null) setHistoryTotal(count);
     }
     setHistoryLoading(false);

@@ -42,7 +42,7 @@ export default function Outbound() {
   useEffect(() => {
     localStorage.setItem('outbound_scanned_items', JSON.stringify(scannedItems));
   }, [scannedItems]);
-  const [selectedScanned, setSelectedScanned] = useState<Set<number>>(new Set());
+  const [selectedScanned, setSelectedScanned] = useState<Set<string>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -71,6 +71,11 @@ export default function Outbound() {
   const [editingType, setEditingType] = useState<'scan' | 'pl' | null>(null);
   const [dataSubTab, setDataSubTab] = useState<'scan' | 'pl'>('scan');
 
+  // Search states
+  const [scannedSearch, setScannedSearch] = useState('');
+  const [plSearch, setPlSearch] = useState('');
+  const [outboundSearch, setOutboundSearch] = useState('');
+
   useEffect(() => {
     setOutboundPage(1);
   }, [dataSubTab, activeTab]);
@@ -80,10 +85,26 @@ export default function Outbound() {
     fetchInventoryBalances();
     fetchCurrentPLItems();
     fetchCurrentScannedItems();
-    if (activeTab === 'data') {
-      fetchOutboundData();
-    }
-  }, [activeTab, outboundPage, dataSubTab]);
+    fetchOutboundData();
+  }, [activeTab, outboundPage, dataSubTab, outboundSearch]);
+
+  const filteredScannedItems = useMemo(() => {
+    if (!scannedSearch.trim()) return scannedItems;
+    const searchLower = scannedSearch.toLowerCase().trim();
+    return scannedItems.filter(item => 
+      (item.so?.toLowerCase().includes(searchLower)) || 
+      (item.rpro?.toLowerCase().includes(searchLower))
+    );
+  }, [scannedItems, scannedSearch]);
+
+  const filteredPlItems = useMemo(() => {
+    if (!plSearch.trim()) return plItems;
+    const searchLower = plSearch.toLowerCase().trim();
+    return plItems.filter(item => 
+      (item.so?.toLowerCase().includes(searchLower)) || 
+      (item.rpro?.toLowerCase().includes(searchLower))
+    );
+  }, [plItems, plSearch]);
 
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
@@ -105,14 +126,33 @@ export default function Outbound() {
     inventoryBalances.forEach(inv => {
       if (inv.quantity <= 0) return;
       
-      const trimmedRpro = inv.rpro?.trim();
-      const trimmedSo = inv.so?.trim();
+      const trimmedRpro = inv.rpro?.trim() || '';
+      const trimmedSo = inv.so?.trim() || '';
+      const loc = inv.location_path || 'N/A';
       
-      if (trimmedRpro && !rproInv.has(trimmedRpro)) rproInv.set(trimmedRpro, inv);
-      if (trimmedSo && !soInv.has(trimmedSo)) soInv.set(trimmedSo, inv);
+      if (trimmedRpro) {
+        if (!rproInv.has(trimmedRpro)) {
+          rproInv.set(trimmedRpro, { ...inv, locations: new Set([loc]) });
+        } else {
+          rproInv.get(trimmedRpro).locations.add(loc);
+        }
+      }
+      
+      if (trimmedSo) {
+        if (!soInv.has(trimmedSo)) {
+          soInv.set(trimmedSo, { ...inv, locations: new Set([loc]) });
+        } else {
+          soInv.get(trimmedSo).locations.add(loc);
+        }
+      }
+
       if (trimmedSo && trimmedRpro) {
         const key = `${trimmedSo}|${trimmedRpro}`;
-        if (!compositeInv.has(key)) compositeInv.set(key, inv);
+        if (!compositeInv.has(key)) {
+          compositeInv.set(key, { ...inv, locations: new Set([loc]) });
+        } else {
+          compositeInv.get(key).locations.add(loc);
+        }
       }
     });
 
@@ -130,16 +170,16 @@ export default function Outbound() {
     if (data) {
       const items = data.map(item => ({
         id: item.id,
-        qrCode: item.qr_code,
-        so: item.so,
-        rpro: item.rpro,
-        kh: item.kh,
+        qrCode: item.qr_code?.trim() || '',
+        so: item.so?.trim() || '',
+        rpro: item.rpro?.trim() || '',
+        kh: item.kh?.trim() || '',
         totalBoxes: item.total_boxes,
         status: item.status,
         note: item.note,
         outQty: item.out_qty,
-        plNo: item.pl_no,
-        locationPath: item.location_path,
+        plNo: item.pl_no?.trim() || '',
+        locationPath: item.location_path?.trim() || '',
         isSaved: item.is_saved,
         date: item.scan_date,
         inventory_id: item.inventory_id,
@@ -155,15 +195,15 @@ export default function Outbound() {
     if (data) {
       setPlItems(data.map(item => ({
         id: item.id,
-        plNo: item.pl_no,
-        so: item.so,
-        rpro: item.rpro,
-        kh: item.kh,
+        plNo: item.pl_no?.trim() || '',
+        so: item.so?.trim() || '',
+        rpro: item.rpro?.trim() || '',
+        kh: item.kh?.trim() || '',
         qty: item.qty,
         totalBoxes: item.total_boxes
       })));
       
-      const uniquePLs = Array.from(new Set(data.map(item => item.pl_no).filter(pl => pl !== '')));
+      const uniquePLs = Array.from(new Set(data.map(item => item.pl_no?.trim()).filter(pl => pl)));
       setPlNumbers(uniquePLs);
       if (plNoInput === '' && uniquePLs.length > 0) setPlNoInput(uniquePLs[0]);
     }
@@ -225,7 +265,14 @@ export default function Outbound() {
       .from('inventory_balances')
       .select('*')
       .gt('quantity', 0);
-    if (data) setInventoryBalances(data);
+    if (data) {
+      const trimmedData = data.map(inv => ({
+        ...inv,
+        so: inv.so?.trim() || '',
+        rpro: inv.rpro?.trim() || '',
+      }));
+      setInventoryBalances(trimmedData);
+    }
   }
 
   async function fetchLocations() {
@@ -682,10 +729,16 @@ export default function Outbound() {
     const from = (outboundPage - 1) * outboundPageSize;
     const to = from + outboundPageSize - 1;
 
-    const { data, count, error } = await supabase
+    let query = supabase
       .from('outbound_transactions')
       .select('*', { count: 'exact' })
-      .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL')
+      .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
+
+    if (outboundSearch.trim()) {
+      query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%`);
+    }
+
+    const { data, count, error } = await query
       .order('created_at', { ascending: false })
       .range(from, to);
     
@@ -854,15 +907,15 @@ export default function Outbound() {
     }
   };
 
-  const toggleSelectScanned = (index: number) => {
+  const toggleSelectScanned = (id: string) => {
     const newSelected = new Set(selectedScanned);
-    if (newSelected.has(index)) newSelected.delete(index);
-    else newSelected.add(index);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
     setSelectedScanned(newSelected);
   };
 
   const deleteSelectedScanned = async () => {
-    const idsToDelete = Array.from(selectedScanned).map(index => scannedItems[index].id);
+    const idsToDelete = Array.from(selectedScanned);
     const { error } = await supabase.from('current_scanned_items').delete().in('id', idsToDelete);
     
     if (error) {
@@ -937,11 +990,11 @@ export default function Outbound() {
   };
 
   const handleSavePLToOutbound = async () => {
-    if (plItems.length === 0) return;
+    if (filteredPlItems.length === 0) return;
     setLoading(true);
     try {
       // Pre-calculate scan counts and inventory matches to avoid O(N*M) in the map
-      const itemsToSave = plItems.map(item => {
+      const itemsToSave = filteredPlItems.map(item => {
         const trimmedSo = item.so?.trim() || '';
         const trimmedRpro = item.rpro?.trim() || '';
         
@@ -992,12 +1045,12 @@ export default function Outbound() {
   };
 
   const handlePrintPL = () => {
-    if (plItems.length === 0) return;
+    if (filteredPlItems.length === 0) return;
 
     // Group items by PL No
     const plGroups = new Map<string, any[]>();
     
-    plItems.forEach(item => {
+    filteredPlItems.forEach(item => {
       const plNo = item.plNo || 'N/A';
       if (!plGroups.has(plNo)) {
         plGroups.set(plNo, []);
@@ -1260,8 +1313,20 @@ export default function Outbound() {
             {/* Scanned List Section */}
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
-                <div className="p-6 border-b border-blue-100 flex items-center justify-between bg-blue-600 shadow-md">
+                <div className="p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
                   <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({scannedItems.length})</h2>
+                  
+                  <div className="flex-1 max-w-md relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm theo SO, RPRO trong danh sách chờ..."
+                      value={scannedSearch}
+                      onChange={(e) => setScannedSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all"
+                    />
+                  </div>
+
                   <div className="flex gap-4">
                     {scannedItems.length > 0 && (
                       <button
@@ -1311,10 +1376,10 @@ export default function Outbound() {
                           {isAdmin && (
                             <input 
                               type="checkbox" 
-                              checked={selectedScanned.size === scannedItems.length && scannedItems.length > 0}
+                              checked={selectedScanned.size === filteredScannedItems.length && filteredScannedItems.length > 0}
                               onChange={() => {
-                                if (selectedScanned.size === scannedItems.length) setSelectedScanned(new Set());
-                                else setSelectedScanned(new Set(scannedItems.map((_, i) => i)));
+                                if (selectedScanned.size === filteredScannedItems.length) setSelectedScanned(new Set());
+                                else setSelectedScanned(new Set(filteredScannedItems.map(item => item.id)));
                               }}
                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
@@ -1332,22 +1397,22 @@ export default function Outbound() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {scannedItems.length === 0 ? (
+                      {filteredScannedItems.length === 0 ? (
                         <tr>
                           <td colSpan={10} className="px-6 py-12 text-center">
                             <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                            <p className="text-slate-400 italic text-sm">Chưa có dữ liệu trong danh sách chờ xuất</p>
+                            <p className="text-slate-400 italic text-sm">Không tìm thấy dữ liệu phù hợp</p>
                           </td>
                         </tr>
                       ) : (
-                        scannedItems.map((item, index) => (
-                          <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(index) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
+                        filteredScannedItems.map((item, index) => (
+                          <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.id) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {isAdmin && (
                                 <input 
                                   type="checkbox" 
-                                  checked={selectedScanned.has(index)}
-                                  onChange={() => toggleSelectScanned(index)}
+                                  checked={selectedScanned.has(item.id)}
+                                  onChange={() => toggleSelectScanned(item.id)}
                                   className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                 />
                               )}
@@ -1472,7 +1537,7 @@ export default function Outbound() {
 
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center text-orange-600 shadow-sm">
                       <FileText className="w-5 h-5" />
@@ -1482,6 +1547,18 @@ export default function Outbound() {
                       <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Current Packing List Data</p>
                     </div>
                   </div>
+
+                  <div className="flex-1 max-w-md relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm theo SO, RPRO trong PL..."
+                      value={plSearch}
+                      onChange={(e) => setPlSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    />
+                  </div>
+
                   {plItems.length > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-400 mr-2">{plItems.length} dòng</span>
@@ -1561,7 +1638,15 @@ export default function Outbound() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {plItems.map((item, index) => {
+                        {filteredPlItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="px-6 py-12 text-center">
+                              <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                              <p className="text-slate-400 italic text-sm">Không tìm thấy dữ liệu phù hợp</p>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredPlItems.map((item, index) => {
                           const trimmedSo = item.so?.trim();
                           const trimmedRpro = item.rpro?.trim();
                           
@@ -1584,7 +1669,7 @@ export default function Outbound() {
                             : trimmedRpro 
                               ? plItemStats.rproInv.get(trimmedRpro) 
                               : plItemStats.soInv.get(trimmedSo);
-                          const location = invMatch ? invMatch.location_path : 'N/A';
+                          const location = invMatch ? Array.from(invMatch.locations).join(', ') : 'N/A';
 
                           return (
                             <tr key={index} className="hover:bg-slate-50 transition-colors">
@@ -1616,7 +1701,8 @@ export default function Outbound() {
                               </td>
                             </tr>
                           );
-                        })}
+                        })
+                      )}
                       </tbody>
                       {plItems.length > 0 && (
                         <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
@@ -1701,8 +1787,18 @@ export default function Outbound() {
           </div>
 
           <div className="bg-white rounded-2xl border-2 border-orange-600 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-orange-50/50">
+            <div className="p-4 border-b border-slate-100 bg-orange-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h2 className="text-lg font-bold text-orange-900">Lịch sử xuất kho (DATA XUẤT KHO)</h2>
+              <div className="flex-1 max-w-md relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm theo SO, RPRO trong Data xuất..."
+                  value={outboundSearch}
+                  onChange={(e) => setOutboundSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                />
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse border border-slate-200">

@@ -39,32 +39,54 @@ export default function Inventory() {
   async function fetchInventory() {
     setLoading(true);
     setIsLoading(true);
-    const from = 0;
-    const to = pageSize - 1;
-
-    let query = supabase
-      .from('inventory_balances')
-      .select('*', { count: 'exact' });
-
-    if (searchTerm) {
-      query = query.or(`so.ilike.%${searchTerm}%,rpro.ilike.%${searchTerm}%,kh.ilike.%${searchTerm}%`);
-    }
-
-    const { data, count, error } = await query
-      .order('last_updated', { ascending: false })
-      .range(from, to);
     
-    if (error) {
-      const errorMsg = error.message.includes('Failed to fetch')
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const fetchLimit = 1000;
+      let totalInDB = 0;
+
+      while (hasMore && offset < pageSize) {
+        let query = supabase
+          .from('inventory_balances')
+          .select('*', { count: 'exact' });
+
+        if (searchTerm) {
+          query = query.or(`so.ilike.%${searchTerm}%,rpro.ilike.%${searchTerm}%,kh.ilike.%${searchTerm}%`);
+        }
+
+        const { data, count, error } = await query
+          .order('last_updated', { ascending: false })
+          .range(offset, offset + fetchLimit - 1);
+
+        if (error) throw error;
+
+        if (data) {
+          allData = [...allData, ...data];
+          if (count !== null) totalInDB = count;
+          
+          if (data.length < fetchLimit || allData.length >= pageSize || allData.length >= totalInDB) {
+            hasMore = false;
+          } else {
+            offset += fetchLimit;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setInventory(allData);
+      setTotalCount(totalInDB);
+    } catch (error: any) {
+      const errorMsg = error.message?.includes('Failed to fetch')
         ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
         : error.message;
       setMessage({ type: 'error', text: 'Lỗi khi tải tồn kho: ' + errorMsg });
-    } else if (data) {
-      setInventory(data);
-      if (count !== null) setTotalCount(count);
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
     }
-    setLoading(false);
-    setIsLoading(false);
   }
 
   const toggleSelectItem = (id: string) => {
@@ -446,6 +468,10 @@ export default function Inventory() {
 
   const filteredInventory = groupedInventory;
 
+  const totalBoxes = useMemo(() => {
+    return filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  }, [filteredInventory]);
+
   const exportData = async (format: 'xlsx' | 'csv') => {
     setLoading(true);
     setIsLoading(true);
@@ -645,7 +671,7 @@ export default function Inventory() {
             </div>
           </div>
           <div className="text-sm font-black text-slate-500 uppercase tracking-widest">
-            Hiển thị: <span className="text-blue-600">{filteredInventory.length}</span> đơn hàng ({totalCount} thùng)
+            Hiển thị: <span className="text-blue-600">{filteredInventory.length.toLocaleString()}</span> đơn hàng ({totalBoxes.toLocaleString()} thùng)
           </div>
         </div>
 
@@ -739,7 +765,7 @@ export default function Inventory() {
                   <td className="px-2 py-3 border border-slate-300 text-center"></td>
                   <td colSpan={4} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
                   <td className="px-4 py-3 text-[11px] border border-slate-300 text-center text-blue-700">
-                    {filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0)}
+                    {totalBoxes.toLocaleString()}
                   </td>
                   <td colSpan={3} className="px-4 py-3 border border-slate-300"></td>
                 </tr>

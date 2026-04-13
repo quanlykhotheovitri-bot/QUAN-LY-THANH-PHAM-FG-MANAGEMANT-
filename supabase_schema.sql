@@ -358,3 +358,24 @@ ALTER TABLE inventory_balances DISABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_movements DISABLE ROW LEVEL SECURITY;
 ALTER TABLE current_pl_items DISABLE ROW LEVEL SECURITY;
 ALTER TABLE current_scanned_items DISABLE ROW LEVEL SECURITY;
+
+-- 16. Plastic Bin Management
+CREATE TABLE IF NOT EXISTS plastic_bin_customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS plastic_bin_returns (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    return_date TIMESTAMPTZ DEFAULT now(),
+    qrcode TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    quantity_large INTEGER DEFAULT 0,
+    quantity_small INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE plastic_bin_customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plastic_bin_returns DISABLE ROW LEVEL SECURITY;

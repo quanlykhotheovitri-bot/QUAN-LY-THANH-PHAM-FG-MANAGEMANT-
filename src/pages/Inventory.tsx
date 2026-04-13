@@ -633,6 +633,25 @@ export default function Inventory() {
     XLSX.writeFile(wb, `TonKho_Export_${new Date().toISOString().split('T')[0]}.${format}`);
   };
 
+  const downloadTemplate = () => {
+    const templateData = [
+      {
+        'SO': 'SO12345',
+        'RPRO': 'RPRO-001',
+        'KHÁCH HÀNG': 'Công ty A',
+        'LOẠI THÙNG': 'Thùng nhựa',
+        'SỐ THÙNG ĐƠN HÀNG': '1/10',
+        'VỊ TRÍ': 'A-01-01-01',
+        'QRCODE': 'SO12345|RPRO-001|1|10|ABCDE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, 'Mau_Nhap_Ton_Kho.xlsx');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -669,6 +688,13 @@ export default function Inventory() {
               XÓA TẤT CẢ
             </button>
           )}
+          <button
+            onClick={downloadTemplate}
+            className="flex items-center gap-2 px-6 py-3 bg-slate-600 text-white rounded-xl font-black hover:bg-slate-700 transition-all shadow-lg active:scale-95"
+          >
+            <Download className="w-5 h-5" />
+            TẢI FILE MẪU
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"

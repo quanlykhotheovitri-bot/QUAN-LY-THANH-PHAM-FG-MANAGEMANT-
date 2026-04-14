@@ -106,16 +106,23 @@ export default function Outbound() {
     );
   }, [plItems, plSearch]);
 
+  const cleanId = (id: string | null | undefined) => {
+    if (!id) return '';
+    return id.toString().replace(/\s/g, '').toUpperCase();
+  };
+
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
     const soCounts = new Map<string, number>();
     
     scannedItems.forEach(s => {
-      if (s.rpro) {
-        rproCounts.set(s.rpro, (rproCounts.get(s.rpro) || 0) + 1);
+      const cleanedRpro = cleanId(s.rpro);
+      const cleanedSo = cleanId(s.so);
+      if (cleanedRpro) {
+        rproCounts.set(cleanedRpro, (rproCounts.get(cleanedRpro) || 0) + 1);
       }
-      if (s.so) {
-        soCounts.set(s.so, (soCounts.get(s.so) || 0) + 1);
+      if (cleanedSo) {
+        soCounts.set(cleanedSo, (soCounts.get(cleanedSo) || 0) + 1);
       }
     });
 
@@ -126,32 +133,32 @@ export default function Outbound() {
     inventoryBalances.forEach(inv => {
       if (inv.quantity <= 0) return;
       
-      const trimmedRpro = inv.rpro?.trim() || '';
-      const trimmedSo = inv.so?.trim() || '';
-      const loc = inv.location_path || 'N/A';
+      const cleanedRpro = cleanId(inv.rpro);
+      const cleanedSo = cleanId(inv.so);
+      const loc = inv.location_path?.trim() || 'N/A';
       
-      if (trimmedRpro) {
-        if (!rproInv.has(trimmedRpro)) {
-          rproInv.set(trimmedRpro, { ...inv, locations: new Set([loc]) });
+      if (cleanedRpro) {
+        if (!rproInv.has(cleanedRpro)) {
+          rproInv.set(cleanedRpro, { ...inv, locations: new Set([loc]) });
         } else {
-          rproInv.get(trimmedRpro).locations.add(loc);
+          rproInv.get(cleanedRpro)!.locations!.add(loc);
         }
       }
       
-      if (trimmedSo) {
-        if (!soInv.has(trimmedSo)) {
-          soInv.set(trimmedSo, { ...inv, locations: new Set([loc]) });
+      if (cleanedSo) {
+        if (!soInv.has(cleanedSo)) {
+          soInv.set(cleanedSo, { ...inv, locations: new Set([loc]) });
         } else {
-          soInv.get(trimmedSo).locations.add(loc);
+          soInv.get(cleanedSo)!.locations!.add(loc);
         }
       }
 
-      if (trimmedSo && trimmedRpro) {
-        const key = `${trimmedSo}|${trimmedRpro}`;
+      if (cleanedSo && cleanedRpro) {
+        const key = `${cleanedSo}|${cleanedRpro}`;
         if (!compositeInv.has(key)) {
           compositeInv.set(key, { ...inv, locations: new Set([loc]) });
         } else {
-          compositeInv.get(key).locations.add(loc);
+          compositeInv.get(key)!.locations!.add(loc);
         }
       }
     });
@@ -162,13 +169,30 @@ export default function Outbound() {
   const filteredOutbound = outboundData;
 
   async function fetchCurrentScannedItems() {
-    const { data } = await supabase
-      .from('current_scanned_items')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1000);
-    if (data) {
-      const items = data.map(item => ({
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('current_scanned_items')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < limit) hasMore = false;
+          else offset += limit;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const items = allData.map(item => ({
         id: item.id,
         qrCode: item.qr_code?.trim() || '',
         so: item.so?.trim() || '',
@@ -187,13 +211,36 @@ export default function Outbound() {
       }));
       setScannedItems(items);
       setHasUnsavedChanges(items.some(item => !item.isSaved));
+    } catch (error: any) {
+      console.error('Error fetching scanned items:', error);
     }
   }
 
   async function fetchCurrentPLItems() {
-    const { data } = await supabase.from('current_pl_items').select('*').order('created_at', { ascending: true });
-    if (data) {
-      setPlItems(data.map(item => ({
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('current_pl_items')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < limit) hasMore = false;
+          else offset += limit;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setPlItems(allData.map(item => ({
         id: item.id,
         plNo: item.pl_no?.trim() || '',
         so: item.so?.trim() || '',
@@ -203,9 +250,11 @@ export default function Outbound() {
         totalBoxes: item.total_boxes
       })));
       
-      const uniquePLs = Array.from(new Set(data.map(item => item.pl_no?.trim()).filter(pl => pl)));
+      const uniquePLs = Array.from(new Set(allData.map(item => item.pl_no?.trim()).filter(pl => pl)));
       setPlNumbers(uniquePLs);
       if (plNoInput === '' && uniquePLs.length > 0) setPlNoInput(uniquePLs[0]);
+    } catch (error: any) {
+      console.error('Error fetching PL items:', error);
     }
   }
 
@@ -261,17 +310,38 @@ export default function Outbound() {
   };
 
   async function fetchInventoryBalances() {
-    const { data } = await supabase
-      .from('inventory_balances')
-      .select('*')
-      .gt('quantity', 0);
-    if (data) {
-      const trimmedData = data.map(inv => ({
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('inventory_balances')
+          .select('*')
+          .gt('quantity', 0)
+          .order('last_updated', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < limit) hasMore = false;
+          else offset += limit;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const trimmedData = allData.map(inv => ({
         ...inv,
         so: inv.so?.trim() || '',
         rpro: inv.rpro?.trim() || '',
       }));
       setInventoryBalances(trimmedData);
+    } catch (error: any) {
+      console.error('Error fetching inventory balances:', error);
     }
   }
 
@@ -995,31 +1065,31 @@ export default function Outbound() {
     try {
       // Pre-calculate scan counts and inventory matches to avoid O(N*M) in the map
       const itemsToSave = filteredPlItems.map(item => {
-        const trimmedSo = item.so?.trim() || '';
-        const trimmedRpro = item.rpro?.trim() || '';
+        const cleanedSo = cleanId(item.so);
+        const cleanedRpro = cleanId(item.rpro);
         
-        const scanCount = trimmedRpro ? (plItemStats.rproCounts.get(trimmedRpro) || 0) : (plItemStats.soCounts.get(trimmedSo) || 0);
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
 
         const diff = item.totalBoxes - scanCount;
         let statusText = 'OK';
         if (diff > 0) statusText = `Thiếu (${diff})`;
         else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
 
-        const invMatch = trimmedRpro 
-          ? plItemStats.rproInv.get(trimmedRpro) 
-          : (trimmedSo ? plItemStats.soInv.get(trimmedSo) : null);
+        const invMatch = cleanedRpro 
+          ? plItemStats.rproInv.get(cleanedRpro) 
+          : (cleanedSo ? plItemStats.soInv.get(cleanedSo) : null);
 
         return {
           type: 'PL',
-          qr_code: `${trimmedSo}|${trimmedRpro}`,
-          so: trimmedSo,
-          rpro: trimmedRpro,
+          qr_code: `${cleanedSo}|${cleanedRpro}`,
+          so: cleanedSo,
+          rpro: cleanedRpro,
           kh: item.kh,
           pl_no: item.plNo,
           quantity: item.totalBoxes,
           scan_count: scanCount,
           status: statusText,
-          location_path: invMatch ? invMatch.location_path : 'N/A',
+          location_path: invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A',
           note: 'Lưu từ Danh sách PL hiện tại',
           device_info: navigator.userAgent
         };
@@ -1576,7 +1646,9 @@ export default function Outbound() {
 
                   {plItems.length > 0 && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400 mr-2">{plItems.length} dòng</span>
+                      <span className="text-xs font-bold text-slate-400 mr-2">
+                        {filteredPlItems.length} dòng ({filteredPlItems.reduce((acc, item) => acc + (item.totalBoxes || 0), 0)} thùng)
+                      </span>
                       <button 
                         onClick={() => exportCurrentPL('xlsx')}
                         className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-50 transition-all"
@@ -1670,10 +1742,10 @@ export default function Outbound() {
                           </tr>
                         ) : (
                           filteredPlItems.map((item, index) => {
-                          const trimmedSo = item.so?.trim();
-                          const trimmedRpro = item.rpro?.trim();
+                          const cleanedSo = cleanId(item.so);
+                          const cleanedRpro = cleanId(item.rpro);
                           
-                          const scanCount = trimmedRpro ? (plItemStats.rproCounts.get(trimmedRpro) || 0) : (plItemStats.soCounts.get(trimmedSo) || 0);
+                          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
 
                           const diff = item.totalBoxes - scanCount;
                           let statusText = 'ok';
@@ -1687,10 +1759,10 @@ export default function Outbound() {
                             statusColor = 'text-amber-600';
                           }
 
-                          const invMatch = trimmedRpro 
-                            ? plItemStats.rproInv.get(trimmedRpro) 
-                            : (trimmedSo ? plItemStats.soInv.get(trimmedSo) : null);
-                          const location = invMatch ? Array.from(invMatch.locations).join(', ') : 'N/A';
+                          const invMatch = cleanedRpro 
+                            ? plItemStats.rproInv.get(cleanedRpro) 
+                            : (cleanedSo ? plItemStats.soInv.get(cleanedSo) : null);
+                          const location = invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A';
 
                           return (
                             <tr key={index} className="hover:bg-slate-50 transition-colors">

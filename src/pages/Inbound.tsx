@@ -875,14 +875,14 @@ export default function Inbound() {
                               />
                             )}
                           </th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
                           <th className="px-2 py-3 border border-slate-300"></th>
                         </tr>
                       </thead>
@@ -902,18 +902,18 @@ export default function Inbound() {
                                 />
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qrCode}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">
+                            <td className="px-4 py-4 text-sm border border-slate-200 font-medium text-slate-700">{item.qrCode}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center">{item.so}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center">{item.rpro}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center font-medium text-slate-600">
                               {orderStatusMap[`${item.so}|${item.rpro}`] || 'Đang kiểm tra...'}
                             </td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.boxType}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center">{item.boxType}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center font-bold">
                               {item.totalBoxes > 0 ? `1 / ${item.totalBoxes}` : '1'}
                             </td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.locationPath}</td>
-                            <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{new Date(item.date).toLocaleString('vi-VN')}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center">{item.locationPath}</td>
+                            <td className="px-4 py-4 text-sm border border-slate-200 text-center">{new Date(item.date).toLocaleString('vi-VN')}</td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {isAdmin && (
                                 <button 

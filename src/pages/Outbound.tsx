@@ -1350,9 +1350,9 @@ export default function Outbound() {
             )}
           </AnimatePresence>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
             {/* Configuration Section */}
-            <div className="lg:col-span-1 space-y-6">
+            <div className="xl:col-span-1 space-y-6">
               <div className="bg-white p-6 rounded-2xl border-2 border-orange-500 shadow-lg">
                 <div className="flex items-center gap-2 mb-6 bg-orange-600 p-3 rounded-xl shadow-md">
                   <Settings className="w-5 h-5 text-white" />
@@ -1396,7 +1396,7 @@ export default function Outbound() {
             </div>
 
             {/* Scanned List Section */}
-            <div className="lg:col-span-2">
+            <div className="xl:col-span-3">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
                 <div className="p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
                   <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({scannedItems.length})</h2>
@@ -1558,8 +1558,8 @@ export default function Outbound() {
 
       {activeTab === 'pl' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+            <div className="xl:col-span-1 space-y-6">
               <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
                 <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Upload className="w-8 h-8" />
@@ -1620,7 +1620,7 @@ export default function Outbound() {
               )}
             </div>
 
-            <div className="lg:col-span-2">
+            <div className="xl:col-span-3">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                   <div className="flex items-center gap-3">
@@ -1721,15 +1721,15 @@ export default function Outbound() {
                     <table className="w-full text-left border-collapse border border-slate-200">
                       <thead>
                         <tr className="bg-[#002060] text-white">
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Scan Xuất</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Status</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Location</th>
-                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Thao tác</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Scan Xuất</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Status</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Location</th>
+                          <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Thao tác</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1766,15 +1766,15 @@ export default function Outbound() {
 
                           return (
                             <tr key={index} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.so}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-orange-600">{item.rpro}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.kh}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center">{item.plNo}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold">{item.totalBoxes}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center font-bold text-blue-600">{scanCount}</td>
-                              <td className={`px-4 py-2 border border-slate-200 text-[11px] text-center font-bold ${statusColor}`}>{statusText}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-slate-500">{location}</td>
-                              <td className="px-4 py-2 border border-slate-200 text-center">
+                              <td className="px-4 py-4 border border-slate-200 text-sm text-center">{item.so}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-sm text-center font-bold text-orange-600">{item.rpro}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-xs text-center">{item.kh}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-sm text-center">{item.plNo}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-sm text-center font-bold">{item.totalBoxes}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-sm text-center font-bold text-blue-600">{scanCount}</td>
+                              <td className={`px-4 py-4 border border-slate-200 text-sm text-center font-bold ${statusColor}`}>{statusText}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-xs text-center text-slate-500">{location}</td>
+                              <td className="px-4 py-4 border border-slate-200 text-center">
                                 <div className="flex items-center justify-center gap-1">
                                   <button 
                                     onClick={() => handleEditItem(item, index, 'pl')}
@@ -1800,17 +1800,17 @@ export default function Outbound() {
                       {plItems.length > 0 && (
                         <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
                           <tr>
-                            <td colSpan={4} className="px-4 py-2 border border-slate-200 text-right text-[11px] uppercase tracking-wider">Tổng cộng:</td>
-                            <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-blue-700">
+                            <td colSpan={4} className="px-4 py-4 border border-slate-200 text-right text-sm uppercase tracking-wider">Tổng cộng:</td>
+                            <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
                               {plItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
                             </td>
-                            <td className="px-4 py-2 border border-slate-200 text-[11px] text-center text-blue-700">
+                            <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
                               {plItems.reduce((sum, item) => {
                                 const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
                                 return sum + scanCount;
                               }, 0)}
                             </td>
-                            <td colSpan={3} className="px-4 py-2 border border-slate-200"></td>
+                            <td colSpan={3} className="px-4 py-4 border border-slate-200"></td>
                           </tr>
                         </tfoot>
                       )}

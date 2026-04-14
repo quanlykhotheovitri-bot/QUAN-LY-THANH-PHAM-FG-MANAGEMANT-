@@ -47,6 +47,13 @@ export function parseQRCode(qrData: string) {
       const [boxNumStr, totalStr] = boxIndicatorPart.split('/');
       boxNumber = parseInt(boxNumStr) || 1;
       totalBoxes = parseInt(totalStr) || 1;
+    } else {
+      // If no '/', check if any part is a pure number
+      const numericPart = parts.find(p => /^\d+$/.test(p));
+      if (numericPart) {
+        totalBoxes = parseInt(numericPart) || 1;
+        boxNumber = 1; // Default to box 1 if only total is provided
+      }
     }
 
     // Smart assignment based on prefixes

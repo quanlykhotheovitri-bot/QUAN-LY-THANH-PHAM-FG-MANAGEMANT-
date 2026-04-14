@@ -42,39 +42,81 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
+      // Helper function to fetch all rows from a table
+      async function fetchAll(table: string, select: string, dateField?: string, dateValue?: string) {
+        let allData: any[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          let query = supabase
+            .from(table)
+            .select(select)
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+          
+          if (dateField && dateValue) {
+            query = query.gte(dateField, dateValue);
+          }
+
+          const { data, error } = await query;
+          if (error) throw error;
+          if (!data || data.length < pageSize) {
+            hasMore = false;
+          }
+          if (data) {
+            allData = [...allData, ...data];
+          }
+          page++;
+          
+          // Safety break to prevent infinite loops if something goes wrong
+          if (page > 100) break; 
+        }
+        return allData;
+      }
+
       // Total Inventory
-      const { data: inventory, error: invError } = await supabase
-        .from('inventory_balances')
-        .select('so, rpro, quantity, last_updated, location_path, qr_code');
+      const inventory = await fetchAll('inventory_balances', 'so, rpro, total_boxes, last_updated, location_path, qr_code');
       
-      if (invError) throw invError;
+      const invOrders = new Set(inventory.map(item => item.so).filter(Boolean));
       
-      const invOrders = new Set(inventory?.map(item => item.so).filter(Boolean));
-      const invTotalBoxes = inventory?.length || 0;
+      // Calculate total boxes by grouping by SO|RPRO and taking the max total_boxes
+      const invGroups: Record<string, number> = {};
+      inventory.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        if (!invGroups[key] || (item.total_boxes || 0) > invGroups[key]) {
+          invGroups[key] = item.total_boxes || 0;
+        }
+      });
+      const invTotalBoxes = Object.values(invGroups).reduce((sum, val) => sum + val, 0);
 
       // Today's Inbound
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const { data: inbound, error: inError } = await supabase
-        .from('inbound_transactions')
-        .select('so, rpro, quantity')
-        .gte('created_at', today.toISOString());
+      const inbound = await fetchAll('inbound_transactions', 'so, rpro, total_boxes', 'created_at', today.toISOString());
       
-      if (inError) throw inError;
-      
-      const inOrders = new Set(inbound?.map(item => item.so).filter(Boolean));
-      const inTotalBoxes = inbound?.length || 0;
+      const inOrders = new Set(inbound.map(item => item.so).filter(Boolean));
+      const inGroups: Record<string, number> = {};
+      inbound.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        if (!inGroups[key] || (item.total_boxes || 0) > inGroups[key]) {
+          inGroups[key] = item.total_boxes || 0;
+        }
+      });
+      const inTotalBoxes = Object.values(inGroups).reduce((sum, val) => sum + val, 0);
 
       // Today's Outbound
-      const { data: outbound, error: outError } = await supabase
-        .from('outbound_transactions')
-        .select('so, rpro, quantity')
-        .gte('created_at', today.toISOString());
+      const outbound = await fetchAll('outbound_transactions', 'so, rpro, total_boxes', 'created_at', today.toISOString());
       
-      if (outError) throw outError;
-      
-      const outOrders = new Set(outbound?.map(item => item.so).filter(Boolean));
-      const outTotalBoxes = outbound?.length || 0;
+      const outOrders = new Set(outbound.map(item => item.so).filter(Boolean));
+      const outGroups: Record<string, number> = {};
+      outbound.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        if (!outGroups[key] || (item.total_boxes || 0) > outGroups[key]) {
+          outGroups[key] = item.total_boxes || 0;
+        }
+      });
+      const outTotalBoxes = Object.values(outGroups).reduce((sum, val) => sum + val, 0);
 
       // Aging Calculation
       const now = new Date();
@@ -89,7 +131,7 @@ export default function Dashboard() {
 
       const soAgingMap: Record<string, { quantity: number, maxAge: number, items: any[] }> = {};
 
-      inventory?.forEach(item => {
+      inventory.forEach(item => {
         const entryDate = new Date(item.last_updated);
         const diffDays = Math.floor((now.getTime() - entryDate.getTime()) / (1000 * 3600 * 24));
         

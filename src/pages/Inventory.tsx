@@ -438,7 +438,7 @@ export default function Inventory() {
           so: trimmedSo,
           rpro: trimmedRpro,
           ids: [item.id],
-          quantity: item.quantity || 1,
+          quantity: 1,
           // For total_boxes, we take the value from the first item in the group
           total_boxes: item.total_boxes || 0,
           locationCounts: {} as Record<string, number>,
@@ -448,7 +448,7 @@ export default function Inventory() {
         groups[key].locationCounts[loc] = 1;
       } else {
         groups[key].ids.push(item.id);
-        groups[key].quantity += (item.quantity || 1);
+        groups[key].quantity += 1;
         
         // Use the largest total_boxes found in the group
         if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {
@@ -479,7 +479,7 @@ export default function Inventory() {
   const filteredInventory = groupedInventory;
 
   const totalBoxes = useMemo(() => {
-    return filteredInventory.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    return filteredInventory.reduce((sum, item) => sum + (item.total_boxes || 0), 0);
   }, [filteredInventory]);
 
   const exportData = async (format: 'xlsx' | 'csv') => {

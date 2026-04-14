@@ -49,8 +49,8 @@ export default function Dashboard() {
       
       if (invError) throw invError;
       
-      const invOrders = new Set(inventory?.map(item => `${item.so}|${item.rpro}`));
-      const invTotalBoxes = inventory?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
+      const invOrders = new Set(inventory?.map(item => item.so).filter(Boolean));
+      const invTotalBoxes = inventory?.length || 0;
 
       // Today's Inbound
       const today = new Date();
@@ -62,8 +62,8 @@ export default function Dashboard() {
       
       if (inError) throw inError;
       
-      const inOrders = new Set(inbound?.map(item => `${item.so}|${item.rpro}`));
-      const inTotalBoxes = inbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
+      const inOrders = new Set(inbound?.map(item => item.so).filter(Boolean));
+      const inTotalBoxes = inbound?.length || 0;
 
       // Today's Outbound
       const { data: outbound, error: outError } = await supabase
@@ -73,8 +73,8 @@ export default function Dashboard() {
       
       if (outError) throw outError;
       
-      const outOrders = new Set(outbound?.map(item => `${item.so}|${item.rpro}`));
-      const outTotalBoxes = outbound?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
+      const outOrders = new Set(outbound?.map(item => item.so).filter(Boolean));
+      const outTotalBoxes = outbound?.length || 0;
 
       // Aging Calculation
       const now = new Date();
@@ -95,7 +95,7 @@ export default function Dashboard() {
         
         const group = agingGroups.find(g => diffDays >= g.min && diffDays <= g.max);
         if (group) {
-          group.quantity += (item.quantity || 0);
+          group.quantity += 1;
           if (item.so) group.soSet.add(item.so);
         }
 
@@ -104,7 +104,7 @@ export default function Dashboard() {
           if (!soAgingMap[item.so]) {
             soAgingMap[item.so] = { quantity: 0, maxAge: 0, items: [] };
           }
-          soAgingMap[item.so].quantity += (item.quantity || 0);
+          soAgingMap[item.so].quantity += 1;
           soAgingMap[item.so].maxAge = Math.max(soAgingMap[item.so].maxAge, diffDays);
           soAgingMap[item.so].items.push(item);
         }

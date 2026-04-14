@@ -1157,7 +1157,7 @@ export default function Outbound() {
     });
 
     // Convert to array of groups and sort each group by location
-    const specialPrefixes = ['Logo', 'vai', 'pu', 'fb'];
+    const specialPrefixes = ['Logo', 'Vai', 'PU', 'FB', 'FM'];
     const isSpecial = (loc: string) => {
       if (!loc || loc === 'N/A') return false;
       const l = loc.toLowerCase();
@@ -1177,12 +1177,17 @@ export default function Outbound() {
 
     const renderTable = (items: any[], titleSuffix: string = "") => {
       if (items.length === 0) return "";
+      
+      // Ensure items are sorted by location A-Z
+      const sortedItems = [...items].sort((a, b) => (a.location || '').localeCompare(b.location || ''));
+
       return `
         ${titleSuffix ? `<h3 style="color: #e67e22; margin-top: 20px; font-size: 14px; text-align: left; border-bottom: 2px solid #e67e22; padding-bottom: 5px;">DANH SÁCH ${titleSuffix}</h3>` : ''}
         <table>
           <thead>
             <tr>
               <th style="width: 30px; text-align: center;">STT</th>
+              <th style="width: 80px;">PL No</th>
               <th style="white-space: nowrap;">OVN Order No</th>
               <th style="white-space: nowrap;">RPRO</th>
               <th style="text-align: center; width: 60px;">Total Box</th>
@@ -1191,21 +1196,22 @@ export default function Outbound() {
             </tr>
           </thead>
           <tbody>
-            ${items.map((item, index) => `
+            ${sortedItems.map((item, index) => `
               <tr>
                 <td style="text-align: center;">${index + 1}</td>
+                <td style="font-size: 8px; color: #666;">${item.plNo || 'N/A'}</td>
                 <td style="font-weight: bold; white-space: nowrap;">${item.so || 'N/A'}</td>
                 <td style="color: #e67e22; font-weight: bold; white-space: nowrap;">${item.rpro || ''}</td>
                 <td style="text-align: center; font-weight: bold;">${item.totalBoxes}</td>
                 <td class="location-tag">${item.location}</td>
-                <td style="font-size: 9px; line-height: 1.1; word-break: break-all;">${item.kh || 'N/A'}</td>
+                <td style="font-size: 9px; line-height: 1.1; word-break: break-all;">${(item.kh || 'N/A').substring(0, 30)}${(item.kh || '').length > 30 ? '...' : ''}</td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
             <tr style="background-color: #f8f9fa; font-weight: bold;">
-              <td colspan="3" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
-              <td style="text-align: center; font-size: 12px;">${items.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
+              <td colspan="4" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
+              <td style="text-align: center; font-size: 12px;">${sortedItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -1231,11 +1237,12 @@ export default function Outbound() {
             
             /* Column widths */
             th:nth-child(1), td:nth-child(1) { width: 30px; }
-            th:nth-child(2), td:nth-child(2) { width: 120px; }
-            th:nth-child(3), td:nth-child(3) { width: 100px; }
-            th:nth-child(4), td:nth-child(4) { width: 60px; }
-            th:nth-child(5), td:nth-child(5) { width: 100px; }
-            th:nth-child(6), td:nth-child(6) { width: auto; }
+            th:nth-child(2), td:nth-child(2) { width: 80px; }
+            th:nth-child(3), td:nth-child(3) { width: 120px; }
+            th:nth-child(4), td:nth-child(4) { width: 100px; }
+            th:nth-child(5), td:nth-child(5) { width: 60px; }
+            th:nth-child(6), td:nth-child(6) { width: 100px; }
+            th:nth-child(7), td:nth-child(7) { width: auto; }
 
             @media print {
               body { padding: 0; }

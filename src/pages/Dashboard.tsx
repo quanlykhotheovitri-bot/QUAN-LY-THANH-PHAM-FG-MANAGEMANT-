@@ -106,17 +106,10 @@ export default function Dashboard() {
       const inTotalBoxes = Object.values(inGroups).reduce((sum, val) => sum + val, 0);
 
       // Today's Outbound
-      const outbound = await fetchAll('outbound_transactions', 'so, rpro, total_boxes', 'created_at', today.toISOString());
+      const outbound = await fetchAll('outbound_transactions', 'so, rpro, quantity', 'created_at', today.toISOString());
       
       const outOrders = new Set(outbound.map(item => item.so).filter(Boolean));
-      const outGroups: Record<string, number> = {};
-      outbound.forEach(item => {
-        const key = `${item.so || ''}|${item.rpro || ''}`;
-        if (!outGroups[key] || (item.total_boxes || 0) > outGroups[key]) {
-          outGroups[key] = item.total_boxes || 0;
-        }
-      });
-      const outTotalBoxes = Object.values(outGroups).reduce((sum, val) => sum + val, 0);
+      const outTotalBoxes = outbound.length;
 
       // Aging Calculation
       const now = new Date();

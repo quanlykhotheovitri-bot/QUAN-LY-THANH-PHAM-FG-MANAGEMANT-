@@ -1164,11 +1164,13 @@ export default function Outbound() {
       return specialPrefixes.some(p => l.startsWith(p.toLowerCase()));
     };
 
+    const allSpecialItems: any[] = [];
     const sortedGroups = Array.from(plGroups.entries()).map(([plNo, items]) => {
       const sortedItems = items.sort((a, b) => a.location.localeCompare(b.location));
       const regular = sortedItems.filter(item => !isSpecial(item.location));
       const special = sortedItems.filter(item => isSpecial(item.location));
-      return { plNo, regular, special };
+      allSpecialItems.push(...special);
+      return { plNo, regular };
     }).sort((a, b) => a.plNo.localeCompare(b.plNo));
 
     // Create print window
@@ -1252,41 +1254,32 @@ export default function Outbound() {
           </style>
         </head>
         <body>
-          ${sortedGroups.flatMap((group) => {
-            const sections = [];
-            
-            // Regular items section
-            if (group.regular.length > 0) {
-              sections.push(`
-                <div class="pl-section">
-                  <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
-                  <div class="header-info">
-                    <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
-                    <span>Tổng số dòng: ${group.regular.length}</span>
-                  </div>
-                  ${renderTable(group.regular)}
-                  <div class="footer">Hệ thống Quản lý Kho</div>
+          ${sortedGroups.map((group) => {
+            if (group.regular.length === 0) return '';
+            return `
+              <div class="pl-section">
+                <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
+                <div class="header-info">
+                  <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
+                  <span>Tổng số dòng: ${group.regular.length}</span>
                 </div>
-              `);
-            }
-            
-            // Special items section (LOGO/VẢI/PU/FB/FM)
-            if (group.special.length > 0) {
-              sections.push(`
-                <div class="pl-section">
-                  <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
-                  <div class="header-info">
-                    <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
-                    <span>Tổng số dòng: ${group.special.length}</span>
-                  </div>
-                  ${renderTable(group.special, "HÀNG LOGO/VẢI/PU/FB/FM")}
-                  <div class="footer">Hệ thống Quản lý Kho</div>
-                </div>
-              `);
-            }
-            
-            return sections;
+                ${renderTable(group.regular)}
+                <div class="footer">Hệ thống Quản lý Kho</div>
+              </div>
+            `;
           }).join('')}
+          
+          ${allSpecialItems.length > 0 ? `
+            <div class="pl-section">
+              <h2 style="margin-top: 0;">DANH SÁCH HÀNG LOGO/VẢI/PU/FB/FM TỔNG HỢP</h2>
+              <div class="header-info">
+                <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
+                <span>Tổng số dòng: ${allSpecialItems.length}</span>
+              </div>
+              ${renderTable(allSpecialItems, "HÀNG LOGO/VẢI/PU/FB/FM")}
+              <div class="footer">Hệ thống Quản lý Kho</div>
+            </div>
+          ` : ''}
           <script>
             window.onload = function() {
               setTimeout(() => {

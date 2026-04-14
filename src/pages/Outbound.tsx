@@ -1183,32 +1183,28 @@ export default function Outbound() {
           <thead>
             <tr>
               <th style="width: 30px; text-align: center;">STT</th>
-              <th>PL No</th>
               <th style="white-space: nowrap;">OVN Order No</th>
               <th style="white-space: nowrap;">RPRO</th>
+              <th style="text-align: center; width: 60px;">Total Box</th>
+              <th style="width: 100px;">Location</th>
               <th>Khách Hàng</th>
-              <th style="text-align: center;">Total Box</th>
-              <th>Location</th>
-              <th>Ghi chú</th>
             </tr>
           </thead>
           <tbody>
             ${items.map((item, index) => `
               <tr>
                 <td style="text-align: center;">${index + 1}</td>
-                <td style="font-weight: bold;">${item.plNo || 'N/A'}</td>
                 <td style="font-weight: bold; white-space: nowrap;">${item.so || 'N/A'}</td>
                 <td style="color: #e67e22; font-weight: bold; white-space: nowrap;">${item.rpro || ''}</td>
-                <td style="font-size: 10px;">${item.kh || 'N/A'}</td>
                 <td style="text-align: center; font-weight: bold;">${item.totalBoxes}</td>
                 <td class="location-tag">${item.location}</td>
-                <td></td>
+                <td style="font-size: 9px; line-height: 1.1; word-break: break-all;">${item.kh || 'N/A'}</td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
             <tr style="background-color: #f8f9fa; font-weight: bold;">
-              <td colspan="5" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
+              <td colspan="3" style="text-align: right; font-size: 12px;">TỔNG CỘNG:</td>
               <td style="text-align: center; font-size: 12px;">${items.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}</td>
               <td colspan="2"></td>
             </tr>
@@ -1225,16 +1221,25 @@ export default function Outbound() {
             body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
             .pl-section { page-break-after: always; margin-bottom: 40px; }
             .pl-section:last-child { page-break-after: auto; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+            th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; font-size: 11px; overflow: hidden; }
             th { background-color: #f8f9fa; font-weight: bold; text-transform: uppercase; }
             h2 { text-align: center; color: #002060; margin-bottom: 5px; }
             .header-info { margin-bottom: 10px; font-size: 11px; color: #666; display: flex; justify-content: space-between; }
             .footer { margin-top: 20px; font-size: 10px; text-align: right; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
             .location-tag { background-color: #fff9f0; font-weight: bold; }
+            
+            /* Column widths */
+            th:nth-child(1), td:nth-child(1) { width: 30px; }
+            th:nth-child(2), td:nth-child(2) { width: 120px; }
+            th:nth-child(3), td:nth-child(3) { width: 100px; }
+            th:nth-child(4), td:nth-child(4) { width: 60px; }
+            th:nth-child(5), td:nth-child(5) { width: 100px; }
+            th:nth-child(6), td:nth-child(6) { width: auto; }
+
             @media print {
               body { padding: 0; }
-              @page { margin: 1cm; }
+              @page { size: portrait; margin: 1cm; }
               .pl-section { page-break-after: always; }
             }
           </style>

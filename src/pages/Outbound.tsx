@@ -1252,20 +1252,41 @@ export default function Outbound() {
           </style>
         </head>
         <body>
-          ${sortedGroups.map((group, gIdx) => `
-            <div class="pl-section">
-              <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
-              <div class="header-info">
-                <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
-                <span>Tổng số dòng: ${group.regular.length + group.special.length}</span>
-              </div>
-              
-              ${renderTable(group.regular)}
-              ${renderTable(group.special, "HÀNG LOGO/VẢI/PU/FB")}
-
-              <div class="footer">Hệ thống Quản lý Kho - Trang ${gIdx + 1}/${sortedGroups.length}</div>
-            </div>
-          `).join('')}
+          ${sortedGroups.flatMap((group) => {
+            const sections = [];
+            
+            // Regular items section
+            if (group.regular.length > 0) {
+              sections.push(`
+                <div class="pl-section">
+                  <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
+                  <div class="header-info">
+                    <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
+                    <span>Tổng số dòng: ${group.regular.length}</span>
+                  </div>
+                  ${renderTable(group.regular)}
+                  <div class="footer">Hệ thống Quản lý Kho</div>
+                </div>
+              `);
+            }
+            
+            // Special items section (LOGO/VẢI/PU/FB/FM)
+            if (group.special.length > 0) {
+              sections.push(`
+                <div class="pl-section">
+                  <h2 style="margin-top: 0;">DANH SÁCH LỆNH XUẤT (PL: ${group.plNo})</h2>
+                  <div class="header-info">
+                    <span>Ngày in: ${new Date().toLocaleString('vi-VN')}</span>
+                    <span>Tổng số dòng: ${group.special.length}</span>
+                  </div>
+                  ${renderTable(group.special, "HÀNG LOGO/VẢI/PU/FB/FM")}
+                  <div class="footer">Hệ thống Quản lý Kho</div>
+                </div>
+              `);
+            }
+            
+            return sections;
+          }).join('')}
           <script>
             window.onload = function() {
               setTimeout(() => {

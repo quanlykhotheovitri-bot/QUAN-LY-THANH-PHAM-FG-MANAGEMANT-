@@ -88,14 +88,52 @@ export default function Outbound() {
     fetchOutboundData();
   }, [activeTab, outboundPage, dataSubTab, outboundSearch]);
 
+  const enrichedScannedItems = useMemo(() => {
+    return scannedItems.map(item => {
+      const cleanedSo = cleanId(item.so);
+      const cleanedRpro = cleanId(item.rpro);
+
+      // 1. Match with PL automatically
+      let plMatch = null;
+      if (plItems.length > 0) {
+        plMatch = plItems.find(p => 
+          (cleanedRpro && p.rpro ? cleanId(p.rpro) === cleanedRpro : cleanId(p.so) === cleanedSo)
+        );
+      }
+
+      // 2. Find in Inventory
+      const inventory = inventoryBalances.find(inv => inv.qr_code === item.qrCode);
+
+      let status = plMatch ? 'OK' : 'Wrong';
+      let note = plMatch ? '' : 'Không khớp danh sách PL';
+
+      if (!inventory) {
+        note = note ? note + ' & Không có trong tồn kho' : 'Không có trong tồn kho';
+      } else if (item.outQty > inventory.quantity) {
+        note = note ? note + ' & Xuất vượt tồn' : 'Xuất vượt tồn';
+      }
+
+      return {
+        ...item,
+        status,
+        note,
+        kh: plMatch ? plMatch.kh : item.kh,
+        totalBoxes: plMatch ? plMatch.totalBoxes : item.totalBoxes,
+        plNo: plMatch ? plMatch.plNo : item.plNo,
+        inventory_id: inventory?.id || item.inventory_id,
+        locationPath: inventory?.location_path || item.locationPath
+      };
+    });
+  }, [scannedItems, plItems, inventoryBalances]);
+
   const filteredScannedItems = useMemo(() => {
-    if (!scannedSearch.trim()) return scannedItems;
+    if (!scannedSearch.trim()) return enrichedScannedItems;
     const searchLower = scannedSearch.toLowerCase().trim();
-    return scannedItems.filter(item => 
+    return enrichedScannedItems.filter(item => 
       (item.so?.toLowerCase().includes(searchLower)) || 
       (item.rpro?.toLowerCase().includes(searchLower))
     );
-  }, [scannedItems, scannedSearch]);
+  }, [enrichedScannedItems, scannedSearch]);
 
   const filteredPlItems = useMemo(() => {
     if (!plSearch.trim()) return plItems;
@@ -447,7 +485,7 @@ export default function Outbound() {
   };
 
   const handleSaveScannedToHistory = async () => {
-    const unsavedItems = scannedItems.filter(item => !item.isSaved);
+    const unsavedItems = enrichedScannedItems.filter(item => !item.isSaved);
     if (unsavedItems.length === 0) return;
     
     setLoading(true);
@@ -937,12 +975,12 @@ export default function Outbound() {
   };
 
   const handleConfirmOutbound = async () => {
-    if (scannedItems.length === 0) return;
+    if (enrichedScannedItems.length === 0) return;
     setLoading(true);
     try {
       const payload = {
         device_info: navigator.userAgent,
-        items: scannedItems.map(item => ({
+        items: enrichedScannedItems.map(item => ({
           qrCode: item.qrCode,
           so: item.so,
           rpro: item.rpro,
@@ -1403,7 +1441,7 @@ export default function Outbound() {
                 </div>
               </div>
 
-              {scannedItems.length > 0 && (
+              {enrichedScannedItems.length > 0 && (
                 <button
                   onClick={handleConfirmOutbound}
                   disabled={loading}
@@ -1414,7 +1452,7 @@ export default function Outbound() {
                   ) : (
                     <>
                       <Save className="w-6 h-6" />
-                      XÁC NHẬN XUẤT ({scannedItems.length})
+                      XÁC NHẬN XUẤT ({enrichedScannedItems.length})
                     </>
                   )}
                 </button>
@@ -1425,7 +1463,7 @@ export default function Outbound() {
             <div className="xl:col-span-3">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
                 <div className="p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
-                  <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({scannedItems.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({enrichedScannedItems.length})</h2>
                   
                   <div className="flex-1 max-w-md relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

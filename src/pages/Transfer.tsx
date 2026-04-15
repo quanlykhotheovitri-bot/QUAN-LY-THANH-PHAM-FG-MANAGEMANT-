@@ -124,11 +124,26 @@ export default function Transfer() {
     }
 
     // Check if item exists in inventory
-    const { data: inventoryItem, error } = await supabase
+    let { data: inventoryItem, error } = await supabase
       .from('inventory_balances')
       .select('*')
       .eq('qr_code', parsed.qrCode)
-      .single();
+      .maybeSingle();
+
+    // Fallback: search by SO and RPRO if qr_code search failed
+    if (!inventoryItem && parsed.so && parsed.rpro) {
+      const { data: fallbackItems } = await supabase
+        .from('inventory_balances')
+        .select('*')
+        .eq('so', parsed.so)
+        .eq('rpro', parsed.rpro)
+        .limit(1);
+      
+      if (fallbackItems && fallbackItems.length > 0) {
+        inventoryItem = fallbackItems[0];
+        error = null;
+      }
+    }
 
     const newItem = {
       ...parsed,

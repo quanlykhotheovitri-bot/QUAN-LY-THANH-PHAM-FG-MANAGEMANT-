@@ -17,8 +17,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const VALID_USERS = [
   { username: 'admin', pass: '123456789@', role: 'admin' as UserRole },
-  ...Array.from({ length: 16 }, (_, i) => ({
-    username: `user${i + 1}`,
+  { username: 'user1', pass: '123456789@', role: 'viewer' as UserRole },
+  ...Array.from({ length: 15 }, (_, i) => ({
+    username: `user${i + 2}`,
     pass: '123456789@',
     role: 'user' as UserRole
   }))

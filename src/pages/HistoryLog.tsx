@@ -19,6 +19,7 @@ export default function HistoryLog() {
   const { user } = useAuth();
   const { setIsLoading } = useLoading();
   const isAdmin = user?.role === 'admin';
+  const isViewer = user?.role === 'viewer';
   const [logs, setLogs] = useState<any[]>([]);
   const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
   const [inboundData, setInboundData] = useState<any[]>([]);

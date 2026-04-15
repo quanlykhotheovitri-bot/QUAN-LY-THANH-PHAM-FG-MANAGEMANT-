@@ -40,7 +40,7 @@ export interface SourceImportLine {
   default_location: string;
 }
 
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'user' | 'viewer';
 
 export interface UserProfile {
   id: string;

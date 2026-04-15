@@ -37,16 +37,16 @@ export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const allMenuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
-    { id: 'inbound', label: 'Nhập kho', icon: PackagePlus, roles: ['admin', 'user'] },
-    { id: 'outbound', label: 'Xuất kho', icon: PackageMinus, roles: ['admin', 'user'] },
-    { id: 'transfer', label: 'Chuyển vị trí', icon: ArrowLeftRight, roles: ['admin'] },
-    { id: 'check', label: 'Kiểm kê', icon: ClipboardList, roles: ['admin'] },
-    { id: 'inventory', label: 'Tồn kho', icon: PackageSearch, roles: ['admin'] },
-    { id: 'plastic-bins', label: 'Thùng nhựa', icon: Box, roles: ['admin', 'user'] },
-    { id: 'samples', label: 'Sample', icon: FlaskConical, roles: ['admin', 'user'] },
-    { id: 'history', label: 'Lịch sử', icon: HistoryIcon, roles: ['admin'] },
-    { id: 'settings', label: 'Cài đặt', icon: Settings, roles: ['admin'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
+    { id: 'inbound', label: 'Nhập kho', icon: PackagePlus, roles: ['admin', 'user', 'viewer'] },
+    { id: 'outbound', label: 'Xuất kho', icon: PackageMinus, roles: ['admin', 'user', 'viewer'] },
+    { id: 'transfer', label: 'Chuyển vị trí', icon: ArrowLeftRight, roles: ['admin', 'viewer'] },
+    { id: 'check', label: 'Kiểm kê', icon: ClipboardList, roles: ['admin', 'viewer'] },
+    { id: 'inventory', label: 'Tồn kho', icon: PackageSearch, roles: ['admin', 'viewer'] },
+    { id: 'plastic-bins', label: 'Thùng nhựa', icon: Box, roles: ['admin', 'user', 'viewer'] },
+    { id: 'samples', label: 'Sample', icon: FlaskConical, roles: ['admin', 'user', 'viewer'] },
+    { id: 'history', label: 'Lịch sử', icon: HistoryIcon, roles: ['admin', 'viewer'] },
+    { id: 'settings', label: 'Cài đặt', icon: Settings, roles: ['admin', 'viewer'] },
   ];
 
   const menuItems = allMenuItems.filter(item => item.roles.includes(user?.role || ''));
@@ -169,7 +169,7 @@ export default function MainLayout() {
             <div className="flex flex-col">
               <span className="text-sm font-black text-slate-900 leading-none">{user?.username}</span>
               <span className="text-[10px] text-blue-600 uppercase font-black tracking-wider mt-1">
-                {user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
+                {user?.role === 'admin' ? 'Quản trị viên' : user?.role === 'viewer' ? 'Người xem' : 'Nhân viên'}
               </span>
             </div>
             <div className="w-px h-6 bg-slate-200 mx-2" />

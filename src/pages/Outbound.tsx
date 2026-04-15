@@ -33,13 +33,14 @@ export default function Outbound() {
   const { user: authUser } = useAuth();
   const { setIsLoading } = useLoading();
   const isAdmin = authUser?.role === 'admin';
+  const isViewer = authUser?.role === 'viewer';
 
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
     return id.toString().replace(/\s/g, '').toUpperCase();
   };
 
-  const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
+  const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>(authUser?.role === 'viewer' ? 'data' : 'scan');
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
     const saved = localStorage.getItem('outbound_scanned_items');
     return saved ? JSON.parse(saved) : [];
@@ -1350,26 +1351,30 @@ export default function Outbound() {
 
       {/* Tab Navigation */}
       <div className="flex p-1 bg-slate-100 rounded-2xl w-fit border border-slate-200">
-        <button
-          onClick={() => setActiveTab('scan')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-            activeTab === 'scan' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Scan className="w-4 h-4" />
-          Scan xuất
-        </button>
-        {authUser?.role === 'admin' && (
+        {!isViewer && (
+          <button
+            onClick={() => setActiveTab('scan')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'scan' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Scan className="w-4 h-4" />
+            Scan xuất
+          </button>
+        )}
+        {(isAdmin || isViewer) && (
           <>
-            <button
-              onClick={() => setActiveTab('pl')}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                activeTab === 'pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              PL (Packing List)
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('pl')}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  activeTab === 'pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                PL (Packing List)
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('data')}
               className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${

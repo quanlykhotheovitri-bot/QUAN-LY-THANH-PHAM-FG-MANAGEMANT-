@@ -21,6 +21,7 @@ export default function Inventory() {
   const { user } = useAuth();
   const { setIsLoading } = useLoading();
   const isAdmin = user?.role === 'admin';
+  const isViewer = user?.role === 'viewer';
   const [inventory, setInventory] = useState<InventoryBalance[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -634,13 +635,15 @@ export default function Inventory() {
             <Download className="w-5 h-5" />
             TẢI FILE MẪU
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"
-          >
-            <Upload className="w-5 h-5" />
-            NHẬP EXCEL
-          </button>
+          {!isViewer && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"
+            >
+              <Upload className="w-5 h-5" />
+              NHẬP EXCEL
+            </button>
+          )}
           <button
             onClick={() => exportData('xlsx')}
             className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition-all shadow-lg active:scale-95"

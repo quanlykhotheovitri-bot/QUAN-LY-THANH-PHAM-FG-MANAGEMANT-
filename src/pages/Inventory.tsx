@@ -27,14 +27,14 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(5000);
+  const [pageSize, setPageSize] = useState(10000);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
 
   useEffect(() => {
     fetchInventory();
-  }, [searchTerm]);
+  }, [searchTerm, pageSize]);
 
   async function fetchInventory() {
     setLoading(true);
@@ -678,6 +678,20 @@ export default function Inventory() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl font-black focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
               />
+            </div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-slate-200">
+              <span className="text-[10px] font-black text-slate-400 uppercase">Hiển thị:</span>
+              <select 
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-transparent font-black text-blue-600 outline-none text-sm cursor-pointer"
+              >
+                <option value={100}>100</option>
+                <option value={500}>500</option>
+                <option value={1000}>1,000</option>
+                <option value={5000}>5,000</option>
+                <option value={10000}>10,000</option>
+              </select>
             </div>
           </div>
           <div className="text-sm font-black text-slate-500 uppercase tracking-widest">

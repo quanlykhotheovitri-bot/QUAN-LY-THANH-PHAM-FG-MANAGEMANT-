@@ -47,7 +47,7 @@ export default function Inbound() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'scan' | 'history'>(authUser?.role === 'viewer' ? 'history' : 'scan');
+  const [activeTab, setActiveTab] = useState<'scan' | 'history'>('scan');
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -660,19 +660,17 @@ export default function Inbound() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex p-1 bg-slate-100 rounded-2xl w-fit border border-slate-200">
-          {!isViewer && (
-            <button 
-              onClick={() => setActiveTab('scan')}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                activeTab === 'scan' 
-                  ? 'bg-white text-blue-600 shadow-sm border border-blue-100' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Scan className="w-4 h-4" />
-              Nhập kho hàng hóa
-            </button>
-          )}
+          <button 
+            onClick={() => setActiveTab('scan')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'scan' 
+                ? 'bg-white text-blue-600 shadow-sm border border-blue-100' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Scan className="w-4 h-4" />
+            Nhập kho hàng hóa
+          </button>
           {(isAdmin || isViewer) && (
             <button 
               onClick={() => setActiveTab('history')}

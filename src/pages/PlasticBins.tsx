@@ -23,7 +23,7 @@ export default function PlasticBins() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isViewer = user?.role === 'viewer';
-  const [activeTab, setActiveTab] = useState<'process' | 'customers'>(user?.role === 'viewer' ? 'customers' : 'process');
+  const [activeTab, setActiveTab] = useState<'process' | 'customers'>('process');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -329,17 +329,15 @@ export default function PlasticBins() {
     <div className="space-y-6">
       {/* Tab Navigation */}
       <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-fit">
-        {!isViewer && (
-          <button
-            onClick={() => setActiveTab('process')}
-            className={`px-6 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${
-              activeTab === 'process' ? 'bg-blue-50 text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            XỬ LÝ TRẢ THÙNG
-          </button>
-        )}
+        <button
+          onClick={() => setActiveTab('process')}
+          className={`px-6 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${
+            activeTab === 'process' ? 'bg-blue-50 text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          XỬ LÝ TRẢ THÙNG
+        </button>
         <button
           onClick={() => setActiveTab('customers')}
           className={`px-6 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${

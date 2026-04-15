@@ -329,95 +329,93 @@ export default function Samples() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Configuration */}
-        {!isViewer && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border-2 border-purple-500 shadow-lg">
-              <div className="flex items-center gap-2 mb-6 bg-purple-600 p-3 rounded-xl shadow-md">
-                <Settings className="w-5 h-5 text-white" />
-                <h2 className="text-lg font-bold text-white tracking-tight">Cấu hình quét</h2>
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border-2 border-purple-500 shadow-lg">
+            <div className="flex items-center gap-2 mb-6 bg-purple-600 p-3 rounded-xl shadow-md">
+              <Settings className="w-5 h-5 text-white" />
+              <h2 className="text-lg font-bold text-white tracking-tight">Cấu hình quét</h2>
+            </div>
+            
+            <div className="space-y-6">
+              {/* Scan Mode Selection */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setScanMode('inbound')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                    scanMode === 'inbound' 
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
+                      : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-emerald-200'
+                  }`}
+                >
+                  <PackagePlus className="w-8 h-8" />
+                  <span className="text-xs font-black uppercase">Scan Nhập</span>
+                </button>
+                <button
+                  onClick={() => setScanMode('outbound')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                    scanMode === 'outbound' 
+                      ? 'border-rose-500 bg-rose-50 text-rose-700' 
+                      : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-rose-200'
+                  }`}
+                >
+                  <PackageMinus className="w-8 h-8" />
+                  <span className="text-xs font-black uppercase">Scan Xuất</span>
+                </button>
               </div>
-              
-              <div className="space-y-6">
-                {/* Scan Mode Selection */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setScanMode('inbound')}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                      scanMode === 'inbound' 
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
-                        : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-emerald-200'
-                    }`}
-                  >
-                    <PackagePlus className="w-8 h-8" />
-                    <span className="text-xs font-black uppercase">Scan Nhập</span>
-                  </button>
-                  <button
-                    onClick={() => setScanMode('outbound')}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                      scanMode === 'outbound' 
-                        ? 'border-rose-500 bg-rose-50 text-rose-700' 
-                        : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-rose-200'
-                    }`}
-                  >
-                    <PackageMinus className="w-8 h-8" />
-                    <span className="text-xs font-black uppercase">Scan Xuất</span>
-                  </button>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Dán mã QR ({scanMode === 'inbound' ? 'Nhập' : 'Xuất'})
-                  </label>
-                  <textarea
-                    value={manualQR}
-                    onChange={(e) => setManualQR(e.target.value)}
-                    rows={6}
-                    className={`w-full px-4 py-3 bg-slate-50 border-2 rounded-xl text-sm font-mono focus:ring-0 transition-all resize-none ${
-                      scanMode === 'inbound' ? 'focus:border-emerald-500' : 'focus:border-rose-500'
-                    }`}
-                    placeholder="Dán dữ liệu QR tại đây... (Mỗi dòng 1 mã)"
-                  />
-                  <button
-                    onClick={handleProcessManual}
-                    className={`w-full mt-2 py-3 rounded-lg text-sm font-bold transition-all ${
-                      scanMode === 'inbound' 
-                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
-                        : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
-                    }`}
-                  >
-                    Xử lý mã
-                  </button>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Dán mã QR ({scanMode === 'inbound' ? 'Nhập' : 'Xuất'})
+                </label>
+                <textarea
+                  value={manualQR}
+                  onChange={(e) => setManualQR(e.target.value)}
+                  rows={6}
+                  className={`w-full px-4 py-3 bg-slate-50 border-2 rounded-xl text-sm font-mono focus:ring-0 transition-all resize-none ${
+                    scanMode === 'inbound' ? 'focus:border-emerald-500' : 'focus:border-rose-500'
+                  }`}
+                  placeholder="Dán dữ liệu QR tại đây... (Mỗi dòng 1 mã)"
+                />
+                <button
+                  onClick={handleProcessManual}
+                  className={`w-full mt-2 py-3 rounded-lg text-sm font-bold transition-all ${
+                    scanMode === 'inbound' 
+                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
+                      : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                  }`}
+                >
+                  Xử lý mã
+                </button>
               </div>
             </div>
-
-            {scannedItems.length > 0 && (
-              <button
-                onClick={handleConfirmScans}
-                disabled={loading}
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-purple-100 flex items-center justify-center gap-2 transition-all disabled:opacity-50 uppercase tracking-widest"
-              >
-                {loading ? (
-                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Save className="w-6 h-6" />
-                    XÁC NHẬN LƯU ({scannedItems.length})
-                  </>
-                )}
-              </button>
-            )}
-
-            {message && (
-              <div className={`p-4 rounded-xl flex items-center gap-3 ${
-                message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
-              }`}>
-                {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-                <p className="text-sm font-medium">{message.text}</p>
-              </div>
-            )}
           </div>
-        )}
+
+          {scannedItems.length > 0 && (
+            <button
+              onClick={handleConfirmScans}
+              disabled={loading}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-purple-100 flex items-center justify-center gap-2 transition-all disabled:opacity-50 uppercase tracking-widest"
+            >
+              {loading ? (
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Save className="w-6 h-6" />
+                  XÁC NHẬN LƯU ({scannedItems.length})
+                </>
+              )}
+            </button>
+          )}
+
+          {message && (
+            <div className={`p-4 rounded-xl flex items-center gap-3 ${
+              message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+            }`}>
+              {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <p className="text-sm font-medium">{message.text}</p>
+            </div>
+          )}
+        </div>
 
         {/* Right Column: List */}
         <div className="lg:col-span-2 space-y-6">

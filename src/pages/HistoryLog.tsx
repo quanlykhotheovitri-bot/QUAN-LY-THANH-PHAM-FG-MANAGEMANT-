@@ -30,11 +30,7 @@ export default function HistoryLog() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const pageSize = 50;
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filter, activeView, searchTerm]);
+  const [pageSize, setPageSize] = useState(5000);
 
   useEffect(() => {
     if (activeView === 'movements') {
@@ -42,13 +38,11 @@ export default function HistoryLog() {
     } else {
       fetchInboundData();
     }
-  }, [filter, activeView, currentPage, searchTerm]);
+  }, [filter, activeView, pageSize, searchTerm]);
 
   async function fetchLogs() {
     setLoading(true);
     setIsLoading(true);
-    const from = (currentPage - 1) * pageSize;
-    const to = from + pageSize - 1;
 
     let query = supabase
       .from('inventory_movements')
@@ -64,18 +58,17 @@ export default function HistoryLog() {
 
     const { data, count } = await query
       .order('created_at', { ascending: false })
-      .range(from, to);
+      .limit(pageSize);
 
     if (data) setLogs(data);
     if (count !== null) setTotalCount(count);
     setLoading(false);
+    setIsLoading(false);
   }
 
   async function fetchInboundData() {
     setLoading(true);
     setIsLoading(true);
-    const from = (currentPage - 1) * pageSize;
-    const to = from + pageSize - 1;
 
     let query = supabase
       .from('inbound_transactions')
@@ -87,7 +80,7 @@ export default function HistoryLog() {
 
     const { data, count } = await query
       .order('created_at', { ascending: false })
-      .range(from, to);
+      .limit(pageSize);
     
     if (data) setInboundData(data);
     if (count !== null) setTotalCount(count);
@@ -219,31 +212,24 @@ export default function HistoryLog() {
 
   const filteredInbound = inboundData;
 
-  const totalPages = Math.ceil(totalCount / pageSize);
-
   const PaginationUI = () => (
     <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
-      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-        Hiển thị {Math.min(totalCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalCount, currentPage * pageSize)} trong tổng số {totalCount} bản ghi
+      <div className="text-xs font-black text-slate-500 uppercase tracking-widest">
+        Hiển thị: <span className="text-blue-600">{activeView === 'movements' ? logs.length : inboundData.length}</span> / {totalCount} bản ghi mới nhất
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-          disabled={currentPage === 1}
-          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+      <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-slate-200">
+        <span className="text-[10px] font-black text-slate-400 uppercase">Giới hạn:</span>
+        <select 
+          value={pageSize}
+          onChange={(e) => setPageSize(Number(e.target.value))}
+          className="bg-transparent font-black text-blue-600 outline-none text-sm cursor-pointer"
         >
-          TRƯỚC
-        </button>
-        <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
-          TRANG {currentPage} / {totalPages || 1}
-        </div>
-        <button
-          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-          disabled={currentPage === totalPages || totalPages === 0}
-          className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-        >
-          SAU
-        </button>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+          <option value={500}>500</option>
+          <option value={1000}>1,000</option>
+          <option value={5000}>5,000</option>
+        </select>
       </div>
     </div>
   );

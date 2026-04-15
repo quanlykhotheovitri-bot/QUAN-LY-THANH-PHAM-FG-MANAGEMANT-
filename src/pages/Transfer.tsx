@@ -130,20 +130,21 @@ export default function Transfer() {
       .eq('qr_code', parsed.qrCode)
       .single();
 
-    if (error || !inventoryItem) {
-      setMessage({ type: 'error', text: `Kiện hàng ${parsed.qrCode} không tồn tại trong kho.` });
-      return;
-    }
-
     const newItem = {
       ...parsed,
-      id: inventoryItem.id,
-      kh: inventoryItem.kh,
-      fromLocation: inventoryItem.location_path,
+      id: inventoryItem?.id || null,
+      kh: inventoryItem?.kh || 'N/A',
+      fromLocation: inventoryItem?.location_path || 'N/A',
       toLocation: targetLocation || matchedLocation?.full_path || locationInput,
-      quantity: inventoryItem.quantity,
-      boxType: inventoryItem.box_type
+      quantity: inventoryItem?.quantity || parsed.quantity,
+      boxType: inventoryItem?.box_type || 'N/A',
+      status: (error || !inventoryItem) ? 'Wrong' : 'OK',
+      note: (error || !inventoryItem) ? 'Không có trong tồn kho' : ''
     };
+
+    if (newItem.status === 'Wrong') {
+      setMessage({ type: 'error', text: `Kiện hàng ${parsed.qrCode} không tồn tại trong kho.` });
+    }
 
     setScannedItems(prev => [newItem, ...prev]);
   };
@@ -188,10 +189,17 @@ export default function Transfer() {
   const confirmTransfer = async () => {
     if (scannedItems.length === 0) return;
     
-    const itemsToProcess = scannedItems.filter(item => item.toLocation);
+    const itemsToProcess = scannedItems.filter(item => item.toLocation && item.status === 'OK');
     if (itemsToProcess.length === 0) {
-      setMessage({ type: 'error', text: 'Vui lòng nhập vị trí đích cho các kiện hàng.' });
+      setMessage({ type: 'error', text: 'Không có kiện hàng hợp lệ để chuyển vị trí.' });
       return;
+    }
+
+    const wrongItems = scannedItems.filter(item => item.status === 'Wrong');
+    if (wrongItems.length > 0) {
+      if (!window.confirm(`Có ${wrongItems.length} kiện hàng không hợp lệ sẽ bị bỏ qua. Bạn có muốn tiếp tục?`)) {
+        return;
+      }
     }
 
     setLoading(true);
@@ -504,6 +512,7 @@ export default function Transfer() {
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
                           <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ LƯỢNG</th>
+                          <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TRẠNG THÁI</th>
                           <th className="px-2 py-3 border border-slate-300"></th>
                         </tr>
                       </thead>
@@ -511,7 +520,7 @@ export default function Transfer() {
                         {scannedItems.map((item, index) => (
                           <tr 
                             key={item.qrCode} 
-                            className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''}`}
+                            className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-rose-50' : ''}`}
                           >
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {isAdmin && (
@@ -535,6 +544,9 @@ export default function Transfer() {
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.quantity}</td>
+                            <td className={`px-4 py-3 text-[11px] border border-slate-200 text-center font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {item.status === 'OK' ? 'Hợp lệ' : 'Lỗi'}
+                            </td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               <button 
                                 onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}

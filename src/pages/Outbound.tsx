@@ -33,6 +33,12 @@ export default function Outbound() {
   const { user: authUser } = useAuth();
   const { setIsLoading } = useLoading();
   const isAdmin = authUser?.role === 'admin';
+
+  const cleanId = (id: string | null | undefined) => {
+    if (!id) return '';
+    return id.toString().replace(/\s/g, '').toUpperCase();
+  };
+
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
     const saved = localStorage.getItem('outbound_scanned_items');
@@ -143,11 +149,6 @@ export default function Outbound() {
       (item.rpro?.toLowerCase().includes(searchLower))
     );
   }, [plItems, plSearch]);
-
-  const cleanId = (id: string | null | undefined) => {
-    if (!id) return '';
-    return id.toString().replace(/\s/g, '').toUpperCase();
-  };
 
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();

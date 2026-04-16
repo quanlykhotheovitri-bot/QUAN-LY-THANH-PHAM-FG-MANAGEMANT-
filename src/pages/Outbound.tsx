@@ -1464,38 +1464,38 @@ export default function Outbound() {
             {/* Scanned List Section */}
             <div className="xl:col-span-3">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
-                <div className="p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
+                <div className="p-4 md:p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
                   <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({enrichedScannedItems.length})</h2>
                   
                   <div className="flex-1 max-w-md relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Tìm kiếm theo SO, RPRO trong danh sách chờ..."
+                      placeholder="Tìm kiếm SO, RPRO..."
                       value={scannedSearch}
                       onChange={(e) => setScannedSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all"
+                      className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all"
                     />
                   </div>
 
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-2">
                     {scannedItems.length > 0 && (
                       <button
                         onClick={handleSaveScannedToHistory}
                         disabled={loading || !hasUnsavedChanges}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400"
                       >
                         <Save className="w-4 h-4" />
-                        LƯU DATA XUẤT
+                        LƯU DATA
                       </button>
                     )}
                     {isAdmin && selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}
-                        className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-sm font-medium hover:bg-rose-100 transition-all"
                       >
                         <Trash2 className="w-4 h-4" />
-                        Xóa đã chọn ({selectedScanned.size})
+                        Xóa ({selectedScanned.size})
                       </button>
                     )}
                     {isAdmin && (
@@ -1510,7 +1510,7 @@ export default function Outbound() {
                             setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách chờ xuất.' });
                           }
                         }}
-                        className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                        className="p-2 text-white/70 hover:text-white transition-colors"
                         title="Xóa danh sách"
                       >
                         <Trash2 className="w-5 h-5" />
@@ -1519,7 +1519,8 @@ export default function Outbound() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse border border-slate-200">
                     <thead>
                       <tr className="bg-[#002060] text-white">
@@ -1617,6 +1618,80 @@ export default function Outbound() {
                       )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {filteredScannedItems.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-400 italic text-sm">Không tìm thấy dữ liệu phù hợp</p>
+                    </div>
+                  ) : (
+                    filteredScannedItems.map((item, index) => (
+                      <div key={item.id} className={`p-4 space-y-3 ${selectedScanned.has(item.id) ? 'bg-blue-50' : 'bg-white'} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            {isAdmin && (
+                              <input 
+                                type="checkbox" 
+                                checked={selectedScanned.has(item.id)}
+                                onChange={() => toggleSelectScanned(item.id)}
+                                className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            )}
+                            <div>
+                              <div className="text-sm font-black text-slate-900">{item.so}</div>
+                              <div className="text-xs font-bold text-orange-600">{item.rpro}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {!isViewer && (
+                              <button 
+                                onClick={() => handleEditItem(item, index, 'scan')}
+                                className="p-2 text-slate-300 hover:text-blue-500"
+                              >
+                                <FileText className="w-5 h-5" />
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button 
+                                onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                className="p-2 text-slate-300 hover:text-rose-500"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">Khách hàng</div>
+                            <div className="text-xs font-bold text-slate-700 truncate">{item.kh || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">PL NO</div>
+                            <div className="text-xs font-bold text-slate-700">{item.plNo}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">Số thùng</div>
+                            <div className="text-xs font-black text-slate-900">{item.totalBoxes}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">Status</div>
+                            <div className={`text-xs font-black ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {item.status}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold italic">
+                          <span>Mã: {item.qrCode}</span>
+                          <span>{new Date(item.date).toLocaleDateString('vi-VN')}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

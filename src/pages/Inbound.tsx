@@ -944,64 +944,65 @@ export default function Inbound() {
         </>
       ) : (
         <div className="bg-white rounded-2xl border-2 border-blue-600 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-            <div className="flex items-center gap-4">
-              <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho (DATA NHẬP KHO)</h2>
-              <div className="flex items-center gap-2">
+          <div className="p-4 md:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between bg-blue-50/50 gap-4">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
+              <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho</h2>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="px-3 py-1.5 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-bold focus:outline-none focus:border-blue-500 transition-all shadow-sm"
+                  className="px-3 py-2 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-bold focus:outline-none focus:border-blue-500 transition-all shadow-sm"
                 >
                   <option value="all">Tất cả tình trạng</option>
                   <option value="complete">Đủ đơn</option>
                   <option value="incomplete">Thiếu thùng</option>
                 </select>
-                <div className="relative">
+                <div className="relative flex-1 sm:min-w-[200px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Tìm kiếm tình trạng, SO, RPRO..."
+                    placeholder="Tìm kiếm SO, RPRO..."
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
-                    className="pl-9 pr-4 py-1.5 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 transition-all shadow-sm w-64"
+                    className="w-full pl-9 pr-4 py-2 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 transition-all shadow-sm"
                   />
                 </div>
               </div>
               {isAdmin && selectedHistory.size > 0 && (
                 <button
                   onClick={deleteSelectedHistory}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                  className="flex items-center justify-center gap-2 px-3 py-2 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Xóa đã chọn ({selectedHistory.size})
+                  Xóa ({selectedHistory.size})
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               <button 
                 onClick={() => exportHistory('xlsx')}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
+                className="flex-1 sm:flex-none px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
               >
                 <Download className="w-3.5 h-3.5 text-blue-600" />
                 Excel
               </button>
               <button 
                 onClick={() => exportHistory('csv')}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
+                className="flex-1 sm:flex-none px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-600" />
                 CSV
               </button>
               <button 
-                onClick={fetchHistory}
+                onClick={() => fetchHistory()}
                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
               >
                 <CheckCircle2 className="w-5 h-5" />
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             {historyLoading ? (
               <div className="p-12 text-center">
                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -1081,6 +1082,86 @@ export default function Inbound() {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {historyLoading ? (
+              <div className="p-12 text-center">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-slate-400">Đang tải dữ liệu...</p>
+              </div>
+            ) : historyData.length === 0 ? (
+              <div className="p-12 text-center">
+                <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                <p className="text-slate-400">Chưa có dữ liệu nhập kho</p>
+              </div>
+            ) : (
+              filteredHistory.map((item) => (
+                <div key={item.id} className={`p-4 space-y-3 ${selectedHistory.has(item.id) ? 'bg-blue-50' : 'bg-white'}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      {isAdmin && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedHistory.has(item.id)}
+                          onChange={() => toggleSelectHistory(item.id)}
+                          className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
+                      <div>
+                        <div className="text-sm font-black text-slate-900">{item.so}</div>
+                        <div className="text-xs font-bold text-blue-600">{item.rpro}</div>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => deleteHistoryItem(item.id)}
+                        className="p-2 text-slate-300 hover:text-rose-500"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Tình trạng</div>
+                      <div className="mt-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 
+                            ? 'bg-emerald-100 text-emerald-700' 
+                            : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {orderStatusMap[`${item.so}|${item.rpro}`] || 'Đang kiểm tra...'}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Loại thùng</div>
+                      <div className="text-xs font-bold text-slate-700">{item.box_type}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Số lượng</div>
+                      <div className="text-xs font-black text-blue-700">
+                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Vị trí</div>
+                      <div className="flex items-center gap-1 text-xs font-black text-emerald-600">
+                        <MapPin className="w-3 h-3" />
+                        {item.location_path || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold italic">
+                    <span>Mã: {item.qr_code}</span>
+                    <span>{new Date(item.created_at).toLocaleString('vi-VN')}</span>
+                  </div>
+                </div>
+              ))
             )}
           </div>
           {historyData.length > 0 && (

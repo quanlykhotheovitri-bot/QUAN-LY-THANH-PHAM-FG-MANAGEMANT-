@@ -625,7 +625,8 @@ export default function PlasticBins() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+          {/* Desktop Table View */}
+          <div className="hidden md:block bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -693,6 +694,44 @@ export default function PlasticBins() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-slate-100 bg-white rounded-2xl border-2 border-slate-200 shadow-xl overflow-hidden">
+            {filteredCustomers.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 italic">Chưa có danh sách khách hàng</div>
+            ) : (
+              filteredCustomers.map((item) => (
+                <div key={item.id} className="p-4 space-y-3 bg-white">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-sm font-black text-blue-600">{item.code}</div>
+                      <div className="text-sm font-bold text-slate-900 mt-1">{item.name}</div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => {
+                          setEditingCustomer(item);
+                          setNewCustomer({ code: item.code, name: item.name });
+                          setShowCustomerForm(true);
+                        }}
+                        className="p-2 text-slate-300 hover:text-blue-500"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => setCustomerDeleteConfirmId(item.id)}
+                          className="p-2 text-slate-300 hover:text-rose-500"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

@@ -353,7 +353,8 @@ export default function HistoryLog() {
             <div className="bg-slate-50 p-4 border-b-2 border-slate-200">
               <h2 className="text-sm font-black text-slate-600 uppercase tracking-widest">Danh sách biến động kho</h2>
             </div>
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50">
@@ -446,6 +447,76 @@ export default function HistoryLog() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {loading ? (
+                <div className="p-12 text-center">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="p-12 text-center">
+                  <HistoryIcon className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400">Chưa có lịch sử thao tác nào</p>
+                </div>
+              ) : (
+                filteredLogs.map((log) => (
+                  <div key={log.id} className={`p-4 space-y-3 ${selectedLogs.has(log.id) ? 'bg-blue-50' : 'bg-white'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        {isAdmin && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedLogs.has(log.id)}
+                            onChange={() => toggleSelectLog(log.id)}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        )}
+                        <div>
+                          <div className="text-sm font-black text-slate-900">{log.qr_code}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${getTypeStyle(log.type)}`}>
+                              {getTypeIcon(log.type)}
+                              {log.type}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => deleteLog(log.id)}
+                          className="p-2 text-slate-300 hover:text-rose-500"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2 py-2 border-y border-slate-50">
+                      {log.from_location && (
+                        <span className="text-xs font-medium text-slate-500">{log.from_location}</span>
+                      )}
+                      {log.from_location && log.to_location && <ArrowRightIcon />}
+                      {log.to_location && (
+                        <span className="text-xs font-bold text-blue-600">{log.to_location}</span>
+                      )}
+                      <span className="ml-auto text-sm font-black text-slate-900">x{log.quantity}</span>
+                    </div>
+
+                    {log.remark && (
+                      <div className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded-lg">
+                        {log.remark}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
+                      <Calendar className="w-3 h-3" />
+                      {formatDate(log.created_at)}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
             <PaginationUI />
           </div>

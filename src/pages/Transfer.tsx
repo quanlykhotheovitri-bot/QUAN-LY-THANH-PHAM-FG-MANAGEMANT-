@@ -614,7 +614,8 @@ export default function Transfer() {
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             {historyLoading ? (
               <div className="p-12 text-center">
                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -683,6 +684,70 @@ export default function Transfer() {
               </table>
             )}
           </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {historyLoading ? (
+              <div className="p-12 text-center">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-slate-400">Đang tải dữ liệu...</p>
+              </div>
+            ) : historyData.length === 0 ? (
+              <div className="p-12 text-center">
+                <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                <p className="text-slate-400">Chưa có dữ liệu chuyển kho</p>
+              </div>
+            ) : (
+              historyData.map((item) => (
+                <div key={item.id} className={`p-4 space-y-3 ${selectedHistory.has(item.id) ? 'bg-blue-50' : 'bg-white'}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedHistory.has(item.id)}
+                        onChange={() => toggleSelectHistory(item.id)}
+                        className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <div className="text-sm font-black text-slate-900">{item.qr_code}</div>
+                        <div className="text-xs font-bold text-blue-600">Số lượng: {item.quantity}</div>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => deleteHistoryItem(item.id)}
+                        className="p-2 text-slate-300 hover:text-rose-500"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 py-2 border-y border-slate-50">
+                    <div className="flex-1">
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Từ vị trí</div>
+                      <div className="text-xs font-bold text-slate-600">{item.from_location}</div>
+                    </div>
+                    <ArrowRightIcon className="w-4 h-4 text-slate-300" />
+                    <div className="flex-1 text-right">
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Đến vị trí</div>
+                      <div className="text-xs font-bold text-blue-700">{item.to_location}</div>
+                    </div>
+                  </div>
+
+                  {item.remark && (
+                    <div className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded-lg">
+                      {item.remark}
+                    </div>
+                  )}
+
+                  <div className="text-[10px] text-slate-400 font-bold text-right">
+                    {new Date(item.created_at).toLocaleString('vi-VN')}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
           {historyData.length > 0 && (
             <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -733,5 +798,13 @@ export default function Transfer() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ArrowRightIcon() {
+  return (
+    <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+    </svg>
   );
 }

@@ -670,19 +670,19 @@ export default function Inventory() {
             <p className="text-[10px] text-blue-500 mt-1 font-bold">Đã xử lý: {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} dòng</p>
           </div>
         )}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 min-w-[300px]">
+        <div className="p-4 md:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between bg-slate-50/50 gap-4">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
+            <div className="relative flex-1 md:min-w-[300px]">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
                 placeholder="Tìm kiếm SO, RPRO, Khách hàng..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl font-black focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl font-black focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm md:text-base"
               />
             </div>
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-slate-200">
+            <div className="flex items-center justify-between md:justify-start gap-2 bg-white px-4 py-2 rounded-xl border-2 border-slate-200">
               <span className="text-[10px] font-black text-slate-400 uppercase">Hiển thị:</span>
               <select 
                 value={pageSize}
@@ -697,12 +697,13 @@ export default function Inventory() {
               </select>
             </div>
           </div>
-          <div className="text-sm font-black text-slate-500 uppercase tracking-widest">
+          <div className="text-xs md:text-sm font-black text-slate-500 uppercase tracking-widest text-center md:text-right">
             Hiển thị: <span className="text-blue-600">{filteredInventory.length.toLocaleString()}</span> đơn hàng ({totalBoxes.toLocaleString()} thùng)
           </div>
         </div>
 
-        <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
           <table className="w-full text-left border-collapse border border-slate-200">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#002060] text-white">
@@ -799,6 +800,79 @@ export default function Inventory() {
               </tfoot>
             )}
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-slate-100 overflow-y-auto max-h-[calc(100vh-320px)]">
+          {loading ? (
+            <div className="p-12 text-center">
+              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            </div>
+          ) : filteredInventory.length === 0 ? (
+            <div className="p-12 text-center">
+              <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+              <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
+            </div>
+          ) : (
+            filteredInventory.map((item: any) => {
+              const itemKey = `${item.so}|${item.rpro}`;
+              return (
+                <div key={itemKey} className={`p-4 space-y-3 ${selectedItems.has(itemKey) ? 'bg-blue-50' : 'bg-white'}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      {isAdmin && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedItems.has(itemKey)}
+                          onChange={() => toggleSelectItem(itemKey)}
+                          className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
+                      <div>
+                        <div className="text-sm font-black text-slate-900">{item.so}</div>
+                        <div className="text-xs font-bold text-blue-600">{item.rpro}</div>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => deleteGroup(item.ids)}
+                        className="p-2 text-slate-300 hover:text-rose-500"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Khách hàng</div>
+                      <div className="text-xs font-bold text-slate-700 truncate">{item.kh}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Loại thùng</div>
+                      <div className="text-xs font-bold text-slate-700">{item.box_type}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Số lượng</div>
+                      <div className="text-xs font-black text-blue-700">
+                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Vị trí</div>
+                      <div className="flex items-center gap-1 text-xs font-black text-emerald-600">
+                        <MapPin className="w-3 h-3" />
+                        {item.location_path}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-bold italic">
+                    Cập nhật: {formatDate(item.last_updated)}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

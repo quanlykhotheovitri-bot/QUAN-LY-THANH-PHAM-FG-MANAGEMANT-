@@ -581,110 +581,189 @@ export default function Samples() {
                   </tbody>
                 </table>
               ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-[#002060] text-white">
-                      <th className="px-4 py-4 text-center border-r border-blue-900/30">
-                        {isAdmin && (
-                          <input 
-                            type="checkbox" 
-                            checked={selectedTransactions.size === filteredTransactions.length && filteredTransactions.length > 0}
-                            onChange={toggleSelectAllTransactions}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        )}
-                      </th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Ngày</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">QRCODE</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">SSO</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Line</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Loại</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Số lượng</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredTransactions.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-12 text-center text-slate-400 italic">Chưa có lịch sử giao dịch</td>
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#002060] text-white">
+                        <th className="px-4 py-4 text-center border-r border-blue-900/30">
+                          {isAdmin && (
+                            <input 
+                              type="checkbox" 
+                              checked={selectedTransactions.size === filteredTransactions.length && filteredTransactions.length > 0}
+                              onChange={toggleSelectAllTransactions}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          )}
+                        </th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Ngày</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">QRCODE</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">SSO</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Line</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Loại</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest border-r border-blue-900/30">Số lượng</th>
+                        <th className="px-6 py-4 text-xs font-black uppercase tracking-widest">Thao tác</th>
                       </tr>
-                    ) : (
-                      filteredTransactions.map((t) => (
-                        <tr key={t.id} className={`hover:bg-slate-50 transition-colors ${selectedTransactions.has(t.id) ? 'bg-blue-50' : ''}`}>
-                          <td className="px-4 py-4 text-center border-r border-slate-100">
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-12 text-center text-slate-400 italic">Chưa có lịch sử giao dịch</td>
+                        </tr>
+                      ) : (
+                        filteredTransactions.map((t) => (
+                          <tr key={t.id} className={`hover:bg-slate-50 transition-colors ${selectedTransactions.has(t.id) ? 'bg-blue-50' : ''}`}>
+                            <td className="px-4 py-4 text-center border-r border-slate-100">
+                              {isAdmin && (
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedTransactions.has(t.id)}
+                                  onChange={() => toggleSelectTransaction(t.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-500">
+                              {new Date(t.transaction_date).toLocaleString('vi-VN')}
+                            </td>
+                            <td className="px-6 py-4 text-sm font-black text-purple-600">{t.qrcode}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{t.sso}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{t.line}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
+                                t.type === 'inbound' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                              }`}>
+                                {t.type === 'inbound' ? <PackagePlus className="w-3 h-3" /> : <PackageMinus className="w-3 h-3" />}
+                                {t.type === 'inbound' ? 'NHẬP' : 'XUẤT'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.quantity}</td>
+                            <td className="px-6 py-4">
+                              {isAdmin && (
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingTransaction(t);
+                                      setEditForm({ 
+                                        quantity: t.quantity, 
+                                        type: t.type,
+                                        sso: t.sso || '',
+                                        line: t.line || ''
+                                      });
+                                    }}
+                                    className="p-2 text-slate-300 hover:text-blue-500 transition-colors"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  {deleteConfirmId === t.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        onClick={() => deleteTransaction(t.id)}
+                                        className="px-2 py-1 bg-rose-500 text-white rounded text-[10px] font-bold hover:bg-rose-600"
+                                      >
+                                        XÓA
+                                      </button>
+                                      <button 
+                                        onClick={() => setDeleteConfirmId(null)}
+                                        className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-300"
+                                      >
+                                        HỦY
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setDeleteConfirmId(t.id)}
+                                      className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {filteredTransactions.length === 0 ? (
+                    <div className="p-12 text-center text-slate-400 italic">Chưa có lịch sử giao dịch</div>
+                  ) : (
+                    filteredTransactions.map((t) => (
+                      <div key={t.id} className={`p-4 space-y-3 ${selectedTransactions.has(t.id) ? 'bg-blue-50' : 'bg-white'}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
                             {isAdmin && (
                               <input 
                                 type="checkbox" 
                                 checked={selectedTransactions.has(t.id)}
                                 onChange={() => toggleSelectTransaction(t.id)}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
                             )}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-500">
-                            {new Date(t.transaction_date).toLocaleString('vi-VN')}
-                          </td>
-                          <td className="px-6 py-4 text-sm font-black text-purple-600">{t.qrcode}</td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{t.sso}</td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{t.line}</td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
-                              t.type === 'inbound' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                            }`}>
-                              {t.type === 'inbound' ? <PackagePlus className="w-3 h-3" /> : <PackageMinus className="w-3 h-3" />}
-                              {t.type === 'inbound' ? 'NHẬP' : 'XUẤT'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.quantity}</td>
-                          <td className="px-6 py-4">
-                            {isAdmin && (
-                              <div className="flex items-center gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setEditingTransaction(t);
-                                    setEditForm({ 
-                                      quantity: t.quantity, 
-                                      type: t.type,
-                                      sso: t.sso || '',
-                                      line: t.line || ''
-                                    });
-                                  }}
-                                  className="p-2 text-slate-300 hover:text-blue-500 transition-colors"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                {deleteConfirmId === t.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <button 
-                                      onClick={() => deleteTransaction(t.id)}
-                                      className="px-2 py-1 bg-rose-500 text-white rounded text-[10px] font-bold hover:bg-rose-600"
-                                    >
-                                      XÓA
-                                    </button>
-                                    <button 
-                                      onClick={() => setDeleteConfirmId(null)}
-                                      className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-300"
-                                    >
-                                      HỦY
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button 
-                                    onClick={() => setDeleteConfirmId(t.id)}
-                                    className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+                            <div>
+                              <div className="text-sm font-black text-purple-600">{t.qrcode}</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
+                                  t.type === 'inbound' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                                }`}>
+                                  {t.type === 'inbound' ? 'NHẬP' : 'XUẤT'}
+                                </span>
+                                <span className="text-xs font-bold text-slate-900">x{t.quantity}</span>
                               </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              )}
+                            </div>
+                          </div>
+                          {isAdmin && (
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => {
+                                  setEditingTransaction(t);
+                                  setEditForm({ 
+                                    quantity: t.quantity, 
+                                    type: t.type,
+                                    sso: t.sso || '',
+                                    line: t.line || ''
+                                  });
+                                }}
+                                className="p-2 text-slate-300 hover:text-blue-500"
+                              >
+                                <Edit2 className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => setDeleteConfirmId(t.id)}
+                                className="p-2 text-slate-300 hover:text-rose-500"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 py-2 border-y border-slate-50">
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">SSO</div>
+                            <div className="text-xs font-bold text-slate-700">{t.sso || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase">Line</div>
+                            <div className="text-xs font-bold text-slate-700">{t.line || 'N/A'}</div>
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 font-bold text-right">
+                          {new Date(t.transaction_date).toLocaleString('vi-VN')}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
             </div>
           </div>
         </div>

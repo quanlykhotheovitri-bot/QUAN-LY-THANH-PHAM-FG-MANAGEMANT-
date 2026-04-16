@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
 import { 
   Scan, 
@@ -17,7 +18,10 @@ import { parseQRCode, formatDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function InventoryCheck() {
+  const { user } = useAuth();
   const { setIsLoading } = useLoading();
+  const isAdmin = user?.role === 'admin';
+  const isViewer = user?.role === 'viewer';
   const [isScanning, setIsScanning] = useState(false);
   const [scannedItems, setScannedItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,7 +131,7 @@ export default function InventoryCheck() {
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900">Kết quả kiểm kê ({scannedItems.length})</h2>
           <div className="flex gap-2">
-            {scannedItems.length > 0 && (
+            {!isViewer && scannedItems.length > 0 && (
               <button
                 onClick={handleSaveCheck}
                 disabled={loading}

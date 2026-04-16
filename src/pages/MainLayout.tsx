@@ -33,7 +33,7 @@ type Tab = 'dashboard' | 'inbound' | 'outbound' | 'inventory' | 'transfer' | 'ch
 
 export default function MainLayout() {
   const { user, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'admin' ? 'dashboard' : 'inbound');
+  const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'admin' || user?.role === 'viewer' ? 'dashboard' : 'inbound');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const allMenuItems = [

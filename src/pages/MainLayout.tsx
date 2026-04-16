@@ -84,10 +84,17 @@ export default function MainLayout() {
           </div>
           <span className="font-bold text-slate-900">FG Management</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200">
             <span className="text-[10px] font-bold text-slate-600 uppercase">{user?.username.slice(0, 2)}</span>
           </div>
+          <button 
+            onClick={signOut}
+            className="p-2 text-slate-400 hover:text-rose-600"
+            title="Đăng xuất"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-600">
             {isSidebarOpen ? <X /> : <Menu />}
           </button>
@@ -139,18 +146,27 @@ export default function MainLayout() {
               </div>
               
               <div className="border-t border-slate-200 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold text-sm border-2 border-white shadow-sm">
-                    {user?.username.slice(0, 2).toUpperCase()}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold text-sm border-2 border-white shadow-sm shrink-0">
+                      {user?.username.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-bold text-slate-900 truncate">
+                        {user?.username === 'admin' ? 'Admin User' : user?.username}
+                      </span>
+                      <span className="text-[10px] text-slate-500 truncate">
+                        {user?.email || 'quanlykhotheovitri@gmail.com'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-bold text-slate-900 truncate">
-                      {user?.username === 'admin' ? 'Admin User' : user?.username}
-                    </span>
-                    <span className="text-[10px] text-slate-500 truncate">
-                      {user?.email || 'quanlykhotheovitri@gmail.com'}
-                    </span>
-                  </div>
+                  <button 
+                    onClick={signOut}
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                    title="Đăng xuất"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
             </div>

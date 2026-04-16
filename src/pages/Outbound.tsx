@@ -1594,12 +1594,14 @@ export default function Outbound() {
                             </td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               <div className="flex items-center justify-center gap-1">
-                                <button 
-                                  onClick={() => handleEditItem(item, index, 'scan')}
-                                  className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
-                                >
-                                  <FileText className="w-4 h-4" />
-                                </button>
+                                {!isViewer && (
+                                  <button 
+                                    onClick={() => handleEditItem(item, index, 'scan')}
+                                    className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                  </button>
+                                )}
                                 {isAdmin && (
                                   <button 
                                     onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
@@ -1626,19 +1628,21 @@ export default function Outbound() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
             <div className="xl:col-span-1 space-y-6">
-              <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
-                <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Upload className="w-8 h-8" />
+              {!isViewer && (
+                <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
+                  <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Upload className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">Tải lên PL nguồn</h3>
+                  <p className="text-slate-500 mb-6 text-sm">
+                    Chọn một hoặc nhiều file Excel để nạp vào danh sách chờ xử lý.
+                  </p>
+                  <label className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-700 transition-all cursor-pointer inline-block w-full">
+                    Chọn file Excel
+                    <input type="file" multiple className="hidden" accept=".xlsx, .xls" onChange={handleSourceFilesUpload} />
+                  </label>
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">Tải lên PL nguồn</h3>
-                <p className="text-slate-500 mb-6 text-sm">
-                  Chọn một hoặc nhiều file Excel để nạp vào danh sách chờ xử lý.
-                </p>
-                <label className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-700 transition-all cursor-pointer inline-block w-full">
-                  Chọn file Excel
-                  <input type="file" multiple className="hidden" accept=".xlsx, .xls" onChange={handleSourceFilesUpload} />
-                </label>
-              </div>
+              )}
 
               {sourceFiles.length > 0 && (
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">

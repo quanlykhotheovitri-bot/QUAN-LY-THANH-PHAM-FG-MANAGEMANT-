@@ -564,12 +564,14 @@ export default function Transfer() {
                               {item.status === 'OK' ? 'Hợp lệ' : 'Lỗi'}
                             </td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
-                              <button 
-                                onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
-                                className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {!isViewer && (
+                                <button 
+                                  onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                  className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}

@@ -1,5 +1,6 @@
 import { useState, useEffect, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -15,6 +16,8 @@ import * as XLSX from 'xlsx';
 import { motion } from 'motion/react';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
+  const isViewer = user?.role === 'viewer';
   const [importLoading, setImportLoading] = useState(false);
   const [locations, setLocations] = useState<any[]>([]);
   const [newLoc, setNewLoc] = useState({ zone: '', shelf: '', level: '', bin: '' });
@@ -110,94 +113,102 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Import Source Data */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-6">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-lg font-bold text-slate-900">Import file nguồn</h2>
-          </div>
-          
-          <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center space-y-4">
-            <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto">
-              <Upload className="text-emerald-600 w-6 h-6" />
+        {!isViewer && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-lg font-bold text-slate-900">Import file nguồn</h2>
             </div>
-            <div>
-              <p className="text-sm font-bold text-slate-900">Click để tải lên file Excel (.xlsx, .csv)</p>
-              <p className="text-xs text-slate-400 mt-1">Hỗ trợ các cột: SO, RPRO, KH, Quantity, BoxType, Location</p>
+            
+            <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center space-y-4">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto">
+                <Upload className="text-emerald-600 w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Click để tải lên file Excel (.xlsx, .csv)</p>
+                <p className="text-xs text-slate-400 mt-1">Hỗ trợ các cột: SO, RPRO, KH, Quantity, BoxType, Location</p>
+              </div>
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+                disabled={importLoading}
+              />
+              <label
+                htmlFor="file-upload"
+                className={`inline-block px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold cursor-pointer hover:bg-emerald-700 transition-all ${importLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {importLoading ? 'Đang xử lý...' : 'Chọn File'}
+              </label>
             </div>
-            <input
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="file-upload"
-              disabled={importLoading}
-            />
-            <label
-              htmlFor="file-upload"
-              className={`inline-block px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold cursor-pointer hover:bg-emerald-700 transition-all ${importLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {importLoading ? 'Đang xử lý...' : 'Chọn File'}
-            </label>
           </div>
-        </div>
+        )}
 
         {/* Location Management */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className={`bg-white p-6 rounded-2xl border border-slate-200 shadow-sm ${isViewer ? 'lg:col-span-2' : ''}`}>
           <div className="flex items-center gap-2 mb-6">
             <MapPin className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-bold text-slate-900">Quản lý vị trí kho</h2>
+            <h2 className="text-lg font-bold text-slate-900">Danh sách vị trí kho</h2>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            <input
-              placeholder="Zone"
-              value={newLoc.zone}
-              onChange={e => setNewLoc({...newLoc, zone: e.target.value})}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              placeholder="Kệ"
-              value={newLoc.shelf}
-              onChange={e => setNewLoc({...newLoc, shelf: e.target.value})}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              placeholder="Tầng"
-              value={newLoc.level}
-              onChange={e => setNewLoc({...newLoc, level: e.target.value})}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              placeholder="Ô"
-              value={newLoc.bin}
-              onChange={e => setNewLoc({...newLoc, bin: e.target.value})}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <button
-            onClick={handleAddLocation}
-            className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"
-          >
-            <Plus className="w-4 h-4" /> Thêm vị trí
-          </button>
+          {!isViewer && (
+            <>
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                <input
+                  placeholder="Zone"
+                  value={newLoc.zone}
+                  onChange={e => setNewLoc({...newLoc, zone: e.target.value})}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  placeholder="Kệ"
+                  value={newLoc.shelf}
+                  onChange={e => setNewLoc({...newLoc, shelf: e.target.value})}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  placeholder="Tầng"
+                  value={newLoc.level}
+                  onChange={e => setNewLoc({...newLoc, level: e.target.value})}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  placeholder="Ô"
+                  value={newLoc.bin}
+                  onChange={e => setNewLoc({...newLoc, bin: e.target.value})}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <button
+                onClick={handleAddLocation}
+                className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"
+              >
+                <Plus className="w-4 h-4" /> Thêm vị trí
+              </button>
+            </>
+          )}
 
-          <div className="mt-6 max-h-60 overflow-y-auto border border-slate-100 rounded-xl">
+          <div className="mt-6 max-h-[400px] overflow-y-auto border border-slate-100 rounded-xl">
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-50 sticky top-0">
                 <tr>
                   <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Vị trí</th>
-                  <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Thao tác</th>
+                  {!isViewer && <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase text-right">Thao tác</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {locations.map(loc => (
                   <tr key={loc.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2 text-sm font-medium text-slate-700">{loc.full_path}</td>
-                    <td className="px-4 py-2 text-right">
-                      <button onClick={() => handleDeleteLocation(loc.id)} className="text-slate-300 hover:text-rose-500">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
+                    {!isViewer && (
+                      <td className="px-4 py-2 text-right">
+                        <button onClick={() => handleDeleteLocation(loc.id)} className="text-slate-300 hover:text-rose-500">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

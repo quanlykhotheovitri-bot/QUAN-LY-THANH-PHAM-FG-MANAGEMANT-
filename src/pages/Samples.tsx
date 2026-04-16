@@ -427,12 +427,14 @@ export default function Samples() {
                   <Package className="w-5 h-5" />
                   Danh sách chờ lưu ({scannedItems.length})
                 </h3>
-                <button 
-                  onClick={() => setScannedItems([])}
-                  className="text-white/70 hover:text-white transition-colors"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                {!isViewer && (
+                  <button 
+                    onClick={() => setScannedItems([])}
+                    className="text-white/70 hover:text-white transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -465,17 +467,20 @@ export default function Samples() {
                             type="number"
                             min="1"
                             value={item.quantity}
+                            disabled={isViewer}
                             onChange={(e) => updateScannedItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
-                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none"
+                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
                           />
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <button 
-                            onClick={() => setScannedItems(prev => prev.filter(i => i.id !== item.id))}
-                            className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {!isViewer && (
+                            <button 
+                              onClick={() => setScannedItems(prev => prev.filter(i => i.id !== item.id))}
+                              className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

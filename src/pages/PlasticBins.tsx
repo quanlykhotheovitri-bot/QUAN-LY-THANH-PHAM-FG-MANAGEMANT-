@@ -429,7 +429,7 @@ export default function PlasticBins() {
                   >
                     <Download className="w-5 h-5" />
                   </button>
-                  {scannedReturns.length > 0 && (
+                  {!isViewer && scannedReturns.length > 0 && (
                     <button 
                       onClick={() => setScannedReturns([])}
                       className="p-2 text-white/70 hover:text-white transition-colors ml-2"
@@ -475,8 +475,9 @@ export default function PlasticBins() {
                                 type="number"
                                 min="0"
                                 value={item.quantity_large}
+                                disabled={isViewer}
                                 onChange={(e) => updateScannedItem(item.id, 'quantity_large', parseInt(e.target.value) || 0)}
-                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none"
+                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-500"
                               />
                             </div>
                           </td>
@@ -487,19 +488,22 @@ export default function PlasticBins() {
                                 type="number"
                                 min="0"
                                 value={item.quantity_small}
+                                disabled={isViewer}
                                 onChange={(e) => updateScannedItem(item.id, 'quantity_small', parseInt(e.target.value) || 0)}
-                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none"
+                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-sm text-center focus:border-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-500"
                               />
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <button 
-                              onClick={() => setScannedReturns(prev => prev.filter(i => i.id !== item.id))}
-                              className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                              title="Xóa khỏi danh sách chờ"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {!isViewer && (
+                              <button 
+                                onClick={() => setScannedReturns(prev => prev.filter(i => i.id !== item.id))}
+                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                title="Xóa khỏi danh sách chờ"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}

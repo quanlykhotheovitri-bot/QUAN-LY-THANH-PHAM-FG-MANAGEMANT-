@@ -1017,12 +1017,14 @@ export default function Inbound() {
                 <thead>
                   <tr className="bg-[#002060] text-white">
                     <th className="px-2 py-3 border border-slate-300 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedHistory.size === historyData.length && historyData.length > 0}
-                        onChange={toggleSelectAllHistory}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
+                      {isAdmin && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedHistory.size === historyData.length && historyData.length > 0}
+                          onChange={toggleSelectAllHistory}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
                     </th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>

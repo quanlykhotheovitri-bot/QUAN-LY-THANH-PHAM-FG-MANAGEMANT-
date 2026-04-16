@@ -140,7 +140,11 @@ export default function InventoryCheck() {
                 <Save className="w-4 h-4" /> Lưu kết quả
               </button>
             )}
-            <button onClick={() => setScannedItems([])} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 className="w-5 h-5" /></button>
+            {!isViewer && (
+              <button onClick={() => setScannedItems([])} className="p-2 text-slate-400 hover:text-rose-500">
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -177,6 +181,7 @@ export default function InventoryCheck() {
                       <input
                         type="number"
                         value={item.actualQty}
+                        disabled={isViewer}
                         onChange={(e) => {
                           const val = parseInt(e.target.value) || 0;
                           const newItems = [...scannedItems];
@@ -185,7 +190,7 @@ export default function InventoryCheck() {
                           newItems[index].status = val === (item.inventory?.quantity || 0) ? 'Khớp' : 'Lệch';
                           setScannedItems(newItems);
                         }}
-                        className="w-16 px-2 py-1 border border-slate-200 rounded text-center font-bold"
+                        className="w-16 px-2 py-1 border border-slate-200 rounded text-center font-bold disabled:bg-slate-50 disabled:text-slate-500"
                       />
                     </td>
                     <td className={`px-6 py-4 text-center font-bold ${item.diff > 0 ? 'text-emerald-600' : item.diff < 0 ? 'text-rose-600' : 'text-slate-400'}`}>

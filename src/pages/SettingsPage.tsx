@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
         if (fileError) throw fileError;
 
-        // 2. Insert Lines
+        // 2. Insert Lines in chunks
         const lines = data.map((row: any) => ({
           import_file_id: importFile.id,
           so: String(row.SO || row.so || ''),
@@ -66,8 +66,12 @@ export default function SettingsPage() {
           default_location: String(row.Location || row.location || row['Vị trí'] || '')
         }));
 
-        const { error: linesError } = await supabase.from('source_import_lines').insert(lines);
-        if (linesError) throw linesError;
+        const chunkSize = 1000;
+        for (let i = 0; i < lines.length; i += chunkSize) {
+          const chunk = lines.slice(i, i + chunkSize);
+          const { error: linesError } = await supabase.from('source_import_lines').insert(chunk);
+          if (linesError) throw linesError;
+        }
 
         setMessage({ type: 'success', text: `Đã import thành công ${lines.length} dòng dữ liệu.` });
       } catch (error: any) {

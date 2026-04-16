@@ -354,38 +354,51 @@ export default function Inbound() {
       }
     });
 
-    // 2. Fetch expected quantities and current counts
+    // 2. Fetch expected quantities and current counts in chunks
     const expectedMap: Record<string, number> = {};
     const currentCountMap: Record<string, number> = {};
     const existingInDBSet = new Set<string>();
-    let sourceData: any[] | null = null;
+    let sourceData: any[] = [];
 
     if (uniqueSORPRO.size > 0) {
-      const soList = Array.from(uniqueSORPRO).map(key => key.split('|')[0]).filter(Boolean);
-      const rproList = Array.from(uniqueSORPRO).map(key => key.split('|')[1]).filter(Boolean);
+      const sorproArray = Array.from(uniqueSORPRO);
+      const queryChunkSize = 200; // Small chunk size for complex OR queries
 
-      // Fetch expected from source_import_lines
-      const { data } = await supabase
-        .from('source_import_lines')
-        .select('so, rpro, quantity, kh')
-        .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+      for (let i = 0; i < sorproArray.length; i += queryChunkSize) {
+        const chunk = sorproArray.slice(i, i + queryChunkSize);
+        const soList = chunk.map(key => key.split('|')[0]).filter(Boolean);
+        const rproList = chunk.map(key => key.split('|')[1]).filter(Boolean);
 
-      sourceData = data;
-      sourceData?.forEach(item => {
+        if (soList.length === 0 && rproList.length === 0) continue;
+
+        // Fetch expected from source_import_lines
+        const { data: sData, error: sError } = await supabase
+          .from('source_import_lines')
+          .select('so, rpro, quantity, kh')
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+        if (sError) console.error('Error fetching source data chunk:', sError);
+        if (sData) sourceData = [...sourceData, ...sData];
+
+        // Fetch current from inventory_balances
+        const { data: balanceData, error: bError } = await supabase
+          .from('inventory_balances')
+          .select('so, rpro, qr_code')
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+        if (bError) console.error('Error fetching balance data chunk:', bError);
+        if (balanceData) {
+          balanceData.forEach(item => {
+            const key = `${item.so || ''}|${item.rpro || ''}`;
+            currentCountMap[key] = (currentCountMap[key] || 0) + 1;
+            if (item.qr_code) existingInDBSet.add(item.qr_code);
+          });
+        }
+      }
+
+      sourceData.forEach(item => {
         const key = `${item.so || ''}|${item.rpro || ''}`;
         expectedMap[key] = item.quantity || 0;
-      });
-
-      // Fetch current from inventory_balances
-      const { data: balanceData } = await supabase
-        .from('inventory_balances')
-        .select('so, rpro, qr_code')
-        .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
-
-      balanceData?.forEach(item => {
-        const key = `${item.so || ''}|${item.rpro || ''}`;
-        currentCountMap[key] = (currentCountMap[key] || 0) + 1;
-        if (item.qr_code) existingInDBSet.add(item.qr_code);
       });
     }
 

@@ -31,7 +31,7 @@ export default function HistoryLog() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(5000);
+  const [pageSize, setPageSize] = useState(10000);
 
   useEffect(() => {
     if (activeView === 'movements') {
@@ -230,6 +230,9 @@ export default function HistoryLog() {
           <option value={500}>500</option>
           <option value={1000}>1,000</option>
           <option value={5000}>5,000</option>
+          <option value={10000}>10,000</option>
+          <option value={20000}>20,000</option>
+          <option value={50000}>50,000</option>
         </select>
       </div>
     </div>

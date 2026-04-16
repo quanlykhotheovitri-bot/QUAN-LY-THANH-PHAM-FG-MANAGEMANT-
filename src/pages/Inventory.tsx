@@ -28,7 +28,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(10000);
+  const [pageSize, setPageSize] = useState(20000);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
@@ -694,6 +694,8 @@ export default function Inventory() {
                 <option value={1000}>1,000</option>
                 <option value={5000}>5,000</option>
                 <option value={10000}>10,000</option>
+                <option value={20000}>20,000</option>
+                <option value={50000}>50,000</option>
               </select>
             </div>
           </div>

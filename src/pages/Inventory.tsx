@@ -28,7 +28,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(5000);
+  const [pageSize, setPageSize] = useState(20000);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [importProgress, setImportProgress] = useState<{ current: number, total: number } | null>(null);
@@ -107,61 +107,61 @@ export default function Inventory() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedItems.size === inventory.length && inventory.length > 0) {
+    if (selectedItems.size === filteredInventory.length && filteredInventory.length > 0) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(inventory.map(item => item.id)));
+      setSelectedItems(new Set(filteredInventory.map(item => item.so + '|' + item.rpro)));
     }
   };
 
-  const deleteItem = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa mục này?')) return;
+  const deleteGroup = async (ids: string[]) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa nhóm này (${ids.length} mục)?`)) return;
     
-    setLoading(true);
-    setIsLoading(true);
-    try {
-      const { error } = await supabase
-        .from('inventory_balances')
-        .delete()
-        .eq('id', id);
+    const { error } = await supabase
+      .from('inventory_balances')
+      .delete()
+      .in('id', ids);
 
-      if (error) throw error;
-      
-      setMessage({ type: 'success', text: 'Đã xóa mục tồn kho thành công' });
-      setSelectedItems(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+    if (error) {
+      const errorMsg = error.message.includes('Failed to fetch')
+        ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+        : error.message;
+      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + errorMsg });
+    } else {
+      setMessage({ type: 'success', text: 'Đã xóa nhóm tồn kho thành công' });
       fetchInventory();
-    } catch (error: any) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa: ' + error.message });
-    } finally {
-      setLoading(false);
-      setIsLoading(false);
     }
   };
 
   const deleteSelected = async () => {
     if (selectedItems.size === 0) return;
 
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedItems.size} mục đã chọn?`)) return;
-
     setLoading(true);
     setIsLoading(true);
     try {
-      const idsToDelete = Array.from(selectedItems);
+      const selectedGroupKeys = Array.from(selectedItems);
+      const idsToDelete: string[] = [];
       
+      selectedGroupKeys.forEach(groupKey => {
+        const group = filteredInventory.find(g => (g.so + '|' + g.rpro) === groupKey);
+        if (group) {
+          idsToDelete.push(...group.ids);
+        }
+      });
+
       const { error } = await supabase
         .from('inventory_balances')
         .delete()
         .in('id', idsToDelete);
         
       if (error) {
-        throw new Error(error.message);
+        const errorMsg = error.message.includes('Failed to fetch')
+          ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+          : error.message;
+        throw new Error(errorMsg);
       }
 
-      setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} mục thành công.` });
+      setMessage({ type: 'success', text: `Đã xóa ${selectedItems.size} nhóm tồn kho thành công.` });
       setSelectedItems(new Set());
       fetchInventory();
     } catch (error: any) {
@@ -425,9 +425,63 @@ export default function Inventory() {
     }
   };
 
-  const totalBoxes = useMemo(() => {
-    return inventory.reduce((sum, item) => sum + (item.total_boxes || 0), 0);
+  const groupedInventory = useMemo(() => {
+    const groups: { [key: string]: any } = {};
+    
+    inventory.forEach(item => {
+      // Group by combination of SO and RPRO
+      const trimmedSo = item.so?.trim() || '';
+      const trimmedRpro = item.rpro?.trim() || '';
+      const key = `${trimmedSo}|${trimmedRpro}`;
+      if (!groups[key]) {
+        groups[key] = {
+          ...item,
+          so: trimmedSo,
+          rpro: trimmedRpro,
+          ids: [item.id],
+          quantity: 1,
+          // For total_boxes, we take the value from the first item in the group
+          total_boxes: item.total_boxes || 0,
+          locationCounts: {} as Record<string, number>,
+          last_updated: item.last_updated
+        };
+        const loc = item.location_path || 'Chưa có';
+        groups[key].locationCounts[loc] = 1;
+      } else {
+        groups[key].ids.push(item.id);
+        groups[key].quantity += 1;
+        
+        // Use the largest total_boxes found in the group
+        if (item.total_boxes && item.total_boxes > groups[key].total_boxes) {
+          groups[key].total_boxes = item.total_boxes;
+        }
+        
+        const loc = item.location_path || 'Chưa có';
+        groups[key].locationCounts[loc] = (groups[key].locationCounts[loc] || 0) + 1;
+        
+        if (new Date(item.last_updated) > new Date(groups[key].last_updated)) {
+          groups[key].last_updated = item.last_updated;
+        }
+      }
+    });
+
+    return Object.values(groups).map(group => {
+      const locationStrings = Object.entries(group.locationCounts)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([loc, count]) => `${loc}(${count})`);
+
+      return {
+        ...group,
+        location_path: locationStrings.join(', ')
+      };
+    });
   }, [inventory]);
+
+  const filteredInventory = groupedInventory;
+
+  const totalBoxes = useMemo(() => {
+    return filteredInventory.reduce((sum, item) => sum + (item.total_boxes || 0), 0);
+  }, [filteredInventory]);
 
   const exportData = async (format: 'xlsx' | 'csv') => {
     setLoading(true);
@@ -648,7 +702,7 @@ export default function Inventory() {
             </div>
           </div>
           <div className="text-xs md:text-sm font-black text-slate-500 uppercase tracking-widest text-center md:text-right">
-            Hiển thị: <span className="text-blue-600">{inventory.length.toLocaleString()}</span> kiện hàng
+            Hiển thị: <span className="text-blue-600">{filteredInventory.length.toLocaleString()}</span> đơn hàng ({totalBoxes.toLocaleString()} thùng)
           </div>
         </div>
 
@@ -661,18 +715,17 @@ export default function Inventory() {
                   {isAdmin && (
                     <input 
                       type="checkbox" 
-                      checked={selectedItems.size === inventory.length && inventory.length > 0}
+                      checked={selectedItems.size === filteredInventory.length && filteredInventory.length > 0}
                       onChange={toggleSelectAll}
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                   )}
                 </th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">Mã QR</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">RPRO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">KHÁCH HÀNG</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">LOẠI THÙNG</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SỐ THÙNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SỐ THÙNG ĐƠN HÀNG</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">VỊ TRÍ</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">NGÀY NHẬP</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">THAO TÁC</th>
@@ -681,50 +734,53 @@ export default function Inventory() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center">
+                  <td colSpan={9} className="px-6 py-12 text-center">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
                   </td>
                 </tr>
-              ) : inventory.length === 0 ? (
+              ) : filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center">
+                  <td colSpan={9} className="px-6 py-12 text-center">
                     <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                     <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
                   </td>
                 </tr>
               ) : (
-                inventory.map((item: any) => {
+                filteredInventory.map((item: any) => {
+                  const itemKey = `${item.so}|${item.rpro}`;
                   return (
-                    <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(item.id) ? 'bg-blue-50' : ''}`}>
+                    <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${selectedItems.has(itemKey) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         {isAdmin && (
                           <input 
                             type="checkbox" 
-                            checked={selectedItems.has(item.id)}
-                            onChange={() => toggleSelectItem(item.id)}
+                            checked={selectedItems.has(itemKey)}
+                            onChange={() => toggleSelectItem(itemKey)}
                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-mono">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700 uppercase">{item.rpro}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.kh}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.kh}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
-                        {item.total_boxes > 0 ? `1 / ${item.total_boxes}` : '1'}
+                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
                       </td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-600">
-                        {item.location_path}
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
+                        <div className="flex items-center justify-center gap-1 text-blue-600 font-bold">
+                          <MapPin className="w-3 h-3" />
+                          {item.location_path}
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center whitespace-nowrap">
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         {formatDate(item.last_updated)}
                       </td>
                       <td className="px-2 py-3 border border-slate-200 text-center">
                         {isAdmin && (
                           <button 
-                            onClick={() => deleteItem(item.id)}
-                            className="p-1 text-slate-300 hover:text-rose-500"
+                            onClick={() => deleteGroup(item.ids)}
+                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -735,11 +791,11 @@ export default function Inventory() {
                 })
               )}
             </tbody>
-            {!loading && inventory.length > 0 && (
+            {!loading && filteredInventory.length > 0 && (
               <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-300">
                 <tr>
                   <td className="px-2 py-3 border border-slate-300 text-center"></td>
-                  <td colSpan={5} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
+                  <td colSpan={4} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
                   <td className="px-4 py-3 text-[11px] border border-slate-300 text-center text-blue-700">
                     {totalBoxes.toLocaleString()}
                   </td>
@@ -756,34 +812,34 @@ export default function Inventory() {
             <div className="p-12 text-center">
               <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
             </div>
-          ) : inventory.length === 0 ? (
+          ) : filteredInventory.length === 0 ? (
             <div className="p-12 text-center">
               <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
               <p className="text-slate-400">Không tìm thấy dữ liệu tồn kho</p>
             </div>
           ) : (
-            inventory.map((item: any) => {
+            filteredInventory.map((item: any) => {
+              const itemKey = `${item.so}|${item.rpro}`;
               return (
-                <div key={item.id} className={`p-4 space-y-3 ${selectedItems.has(item.id) ? 'bg-blue-50' : 'bg-white'}`}>
+                <div key={itemKey} className={`p-4 space-y-3 ${selectedItems.has(itemKey) ? 'bg-blue-50' : 'bg-white'}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       {isAdmin && (
                         <input 
                           type="checkbox" 
-                          checked={selectedItems.has(item.id)}
-                          onChange={() => toggleSelectItem(item.id)}
+                          checked={selectedItems.has(itemKey)}
+                          onChange={() => toggleSelectItem(itemKey)}
                           className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
                       )}
                       <div>
-                        <div className="text-[10px] font-mono text-slate-400">{item.qr_code}</div>
                         <div className="text-sm font-black text-slate-900">{item.so}</div>
                         <div className="text-xs font-bold text-blue-600">{item.rpro}</div>
                       </div>
                     </div>
                     {isAdmin && (
                       <button 
-                        onClick={() => deleteItem(item.id)}
+                        onClick={() => deleteGroup(item.ids)}
                         className="p-2 text-slate-300 hover:text-rose-500"
                       >
                         <Trash2 className="w-5 h-5" />

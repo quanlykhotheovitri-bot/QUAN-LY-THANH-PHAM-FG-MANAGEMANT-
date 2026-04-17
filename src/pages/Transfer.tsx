@@ -12,7 +12,6 @@ import {
   Trash2,
   Package,
   MapPin,
-  Search,
   ArrowRight,
   History as HistoryIcon,
   Download,
@@ -33,8 +32,6 @@ export default function Transfer() {
     const saved = localStorage.getItem('transfer_scanned_items');
     return saved ? JSON.parse(saved) : [];
   });
-
-  const [scannedSearch, setScannedSearch] = useState('');
 
   useEffect(() => {
     localStorage.setItem('transfer_scanned_items', JSON.stringify(scannedItems));
@@ -63,6 +60,9 @@ export default function Transfer() {
     kh: ''
   });
 
+  const [scannedPage, setScannedPage] = useState(1);
+  const scannedPageSize = 20;
+
   useEffect(() => {
     fetchLocations();
   }, []);
@@ -90,6 +90,9 @@ export default function Transfer() {
       .eq('type', 'TRANSFER');
 
     if (historySearch.qrCode) query = query.ilike('qr_code', `%${historySearch.qrCode}%`);
+    if (historySearch.so) query = query.ilike('so', `%${historySearch.so}%`);
+    if (historySearch.rpro) query = query.ilike('rpro', `%${historySearch.rpro}%`);
+    if (historySearch.kh) query = query.ilike('kh', `%${historySearch.kh}%`);
 
     const { data, count, error } = await query
       .order('created_at', { ascending: false })
@@ -106,6 +109,15 @@ export default function Transfer() {
   }
 
   const matchedLocation = locations.find(l => l.full_path.trim().toLowerCase() === locationInput.trim().toLowerCase());
+
+  useEffect(() => {
+    if (scannedItems.length > 0 && scannedItems.length < 500) {
+      setScannedItems(prev => prev.map(item => ({
+        ...item,
+        toLocation: matchedLocation?.full_path || locationInput
+      })));
+    }
+  }, [locationInput, matchedLocation]);
 
   const handleScan = async (qrData: string) => {
     const trimmedQR = qrData.trim();
@@ -274,41 +286,35 @@ export default function Transfer() {
     setIsLoading(true);
     try {
       const now = new Date().toISOString();
-      const chunkSize = 1000; // Optimal chunk for bulk upsert
+      const chunkSize = 2000; // Even larger chunk for RPC
       
       for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
         const chunk = itemsToProcess.slice(i, i + chunkSize);
         
-        // 1. Prepare bulk update data for inventory_balances
-        const updateData = chunk.map(item => ({
-          id: item.id,
-          location_path: item.toLocation,
-          last_updated: now
-        }));
-        
-        // 2. Prepare movement logs
-        const movementData = chunk.map(item => ({
-          type: 'TRANSFER',
-          qr_code: item.qrCode,
-          from_location: item.fromLocation,
-          to_location: item.toLocation,
-          quantity: item.quantity,
-          remark: `Chuyển vị trí hàng (Batch) - ${authUser?.email || 'System'}`
-        }));
+        const payload = {
+          device_info: `Transfer Tab - ${authUser?.email || 'System'}`,
+          items: chunk.map(item => ({
+            id: item.id,
+            qrCode: item.qrCode,
+            so: item.so,
+            rpro: item.rpro,
+            kh: item.kh,
+            fromLocation: item.fromLocation,
+            toLocation: item.toLocation,
+            quantity: item.quantity,
+            remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
+          }))
+        };
 
-        // 3. Execute concurrently in smaller chunks for performance
-        const [updateResult, movementResult] = await Promise.all([
-          supabase.from('inventory_balances').upsert(updateData),
-          supabase.from('inventory_movements').insert(movementData)
-        ]);
+        const { error: rpcError } = await supabase.rpc('process_transfer_v1', { p_data: payload });
 
-        if (updateResult.error) throw updateResult.error;
-        if (movementResult.error) throw movementResult.error;
+        if (rpcError) throw rpcError;
       }
 
       setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
+      setScannedPage(1);
       clearAppCache();
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
@@ -515,11 +521,9 @@ export default function Transfer() {
 
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
-                <div className="p-6 border-b border-blue-100 bg-blue-600 shadow-md">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
-                  </div>
-                  <div className="flex items-center gap-2 mt-4">
+                <div className="p-6 border-b border-blue-100 flex items-center justify-between bg-blue-600 shadow-md">
+                  <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => setIsScanning(!isScanning)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm transition-all ${
@@ -591,7 +595,7 @@ export default function Transfer() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {scannedItems.map((item, index) => (
+                        {scannedItems.slice((scannedPage - 1) * scannedPageSize, scannedPage * scannedPageSize).map((item, index) => (
                           <tr 
                             key={item.qrCode} 
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-rose-50' : ''}`}
@@ -637,6 +641,33 @@ export default function Transfer() {
                     </table>
                   )}
                 </div>
+
+                {scannedItems.length > scannedPageSize && (
+                  <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      Hiển thị {Math.min(scannedItems.length, (scannedPage - 1) * scannedPageSize + 1)}-{Math.min(scannedItems.length, scannedPage * scannedPageSize)} trong {scannedItems.length}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setScannedPage(prev => Math.max(1, prev - 1))}
+                        disabled={scannedPage === 1}
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                      >
+                        TRƯỚC
+                      </button>
+                      <div className="flex items-center px-3 bg-white border border-slate-200 rounded-lg text-[10px] font-black">
+                        {scannedPage} / {Math.ceil(scannedItems.length / scannedPageSize)}
+                      </div>
+                      <button
+                        onClick={() => setScannedPage(prev => Math.min(Math.ceil(scannedItems.length / scannedPageSize), prev + 1))}
+                        disabled={scannedPage === Math.ceil(scannedItems.length / scannedPageSize)}
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                      >
+                        SAU
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -675,12 +706,33 @@ export default function Transfer() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <input
                   type="text"
                   placeholder="Mã QR..."
                   value={historySearch.qrCode}
                   onChange={(e) => setHistorySearch(prev => ({ ...prev, qrCode: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="SO..."
+                  value={historySearch.so}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, so: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="RPRO..."
+                  value={historySearch.rpro}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, rpro: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="Khách hàng..."
+                  value={historySearch.kh}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, kh: e.target.value }))}
                   className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
                 />
                 <button
@@ -717,6 +769,9 @@ export default function Transfer() {
                       />
                     </th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KH</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ CŨ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ MỚI</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ LƯỢNG</th>
@@ -737,6 +792,9 @@ export default function Transfer() {
                         />
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so || '-'}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.rpro || '-'}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase font-bold text-blue-600">{item.kh || '-'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded">{item.from_location}</span>
                       </td>
@@ -788,6 +846,11 @@ export default function Transfer() {
                       />
                       <div>
                         <div className="text-sm font-black text-slate-900">{item.qr_code}</div>
+                        <div className="text-[10px] text-slate-500 uppercase flex gap-2">
+                          <span>SO: {item.so || '-'}</span>
+                          <span>RPRO: {item.rpro || '-'}</span>
+                        </div>
+                        <div className="text-xs font-bold text-blue-600 uppercase">KH: {item.kh || 'N/A'}</div>
                         <div className="text-xs font-bold text-slate-700">Số lượng: {item.quantity}</div>
                       </div>
                     </div>
@@ -806,7 +869,7 @@ export default function Transfer() {
                       <div className="text-[10px] font-black text-slate-400 uppercase">Từ vị trí</div>
                       <div className="text-xs font-bold text-slate-600">{item.from_location}</div>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300" />
+                    <ArrowRightIcon className="w-4 h-4 text-slate-300" />
                     <div className="flex-1 text-right">
                       <div className="text-[10px] font-black text-slate-400 uppercase">Đến vị trí</div>
                       <div className="text-xs font-bold text-blue-700">{item.to_location}</div>

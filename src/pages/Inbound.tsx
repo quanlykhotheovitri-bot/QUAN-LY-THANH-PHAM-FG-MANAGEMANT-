@@ -387,71 +387,143 @@ export default function Inbound() {
     const existingQRs = new Set(scannedItems.map(item => item.qrCode));
     const currentSkipped: any[] = [];
 
-    try {
-      const newItems: any[] = [];
-      const existingInBatch = new Set(scannedItems.map(item => item.qrCode));
+    // 1. Pre-extract all SO/RPRO to fetch counts in bulk
+    const uniqueSORPRO = new Set<string>();
+    lines.forEach(line => {
+      if (line.includes('|')) {
+        const parsed = parseQRCode(line);
+        if (parsed.so || parsed.rpro) {
+          uniqueSORPRO.add(`${parsed.so || ''}|${parsed.rpro || ''}`);
+        }
+      }
+    });
 
-      // Fetch source data for current batch
-      const qrParsed = lines.filter(l => l.includes('|')).map(l => parseQRCode(l));
-      const sos = qrParsed.map(p => p.so).filter(Boolean);
-      const rpros = qrParsed.map(p => p.rpro).filter(Boolean);
+    // 2. Fetch expected quantities and current counts in chunks
+    const expectedMap: Record<string, number> = {};
+    const currentCountMap: Record<string, number> = {};
+    const existingInDBSet = new Set<string>();
+    let sourceData: any[] = [];
 
-      let sourceData: any[] = [];
-      if (sos.length > 0 || rpros.length > 0) {
-        const { data } = await supabase
+    if (uniqueSORPRO.size > 0) {
+      const sorproArray = Array.from(uniqueSORPRO);
+      const queryChunkSize = 200; // Small chunk size for complex OR queries
+
+      for (let i = 0; i < sorproArray.length; i += queryChunkSize) {
+        const chunk = sorproArray.slice(i, i + queryChunkSize);
+        const soList = chunk.map(key => key.split('|')[0]).filter(Boolean);
+        const rproList = chunk.map(key => key.split('|')[1]).filter(Boolean);
+
+        if (soList.length === 0 && rproList.length === 0) continue;
+
+        // Fetch expected from source_import_lines
+        const { data: sData, error: sError } = await supabase
           .from('source_import_lines')
           .select('so, rpro, quantity, kh')
-          .or(`so.in.(${sos.map(s => `"${s}"`).join(',')}),rpro.in.(${rpros.map(r => `"${r}"`).join(',')})`);
-        if (data) sourceData = data;
-      }
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
-        
-        if (!trimmedLine.includes('|')) {
-          currentLocation = trimmedLine;
-          if (!locationInput) setLocationInput(currentLocation);
-          continue;
+        if (sError) console.error('Error fetching source data chunk:', sError);
+        if (sData) sourceData = [...sourceData, ...sData];
+
+        // Fetch current from inventory_balances
+        const { data: balanceData, error: bError } = await supabase
+          .from('inventory_balances')
+          .select('so, rpro, qr_code')
+          .or(`so.in.(${soList.map(s => `"${s}"`).join(',')}),rpro.in.(${rproList.map(r => `"${r}"`).join(',')})`);
+
+        if (bError) console.error('Error fetching balance data chunk:', bError);
+        if (balanceData) {
+          balanceData.forEach(item => {
+            const key = `${item.so || ''}|${item.rpro || ''}`;
+            currentCountMap[key] = (currentCountMap[key] || 0) + 1;
+            if (item.qr_code) existingInDBSet.add(item.qr_code);
+          });
         }
-
-        const parsed = parseQRCode(trimmedLine);
-        if (existingInBatch.has(parsed.qrCode)) continue;
-
-        // Fetch KH 
-        let kh = '';
-        const sourceMatch = sourceData?.find(s => s.so === parsed.so && s.rpro === parsed.rpro);
-        if (sourceMatch) kh = sourceMatch.kh || '';
-
-        const newItem = {
-          ...parsed,
-          kh,
-          totalBoxes: sourceMatch?.quantity || parsed.totalBoxes,
-          boxType: selectedBoxType,
-          locationPath: currentLocation,
-        };
-
-        newItems.push(newItem);
-        existingInBatch.add(parsed.qrCode);
       }
 
-      if (newItems.length > 0) {
-        setScannedItems(prev => [...newItems, ...prev]);
-      }
-
-      if (currentSkipped.length > 0) {
-        setSkippedItems(currentSkipped);
-        setShowWarning(true);
-      }
-
-      setManualQR('');
-    } catch (error: any) {
-      console.error('Manual process error:', error);
-      setMessage({ type: 'error', text: 'Lỗi xử lý: ' + error.message });
-    } finally {
-      setLoading(false);
-      setIsLoading(false);
+      sourceData.forEach(item => {
+        const key = `${item.so || ''}|${item.rpro || ''}`;
+        expectedMap[key] = item.quantity || 0;
+      });
     }
+
+    // 3. Track counts including what's already in the waiting list
+    const trackingCountMap = { ...currentCountMap };
+    scannedItems.forEach(item => {
+      const key = `${item.so || ''}|${item.rpro || ''}`;
+      trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
+    });
+    
+    const newItems: any[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      if (!trimmedLine.includes('|')) {
+        currentLocation = trimmedLine;
+        if (!locationInput) setLocationInput(currentLocation);
+        continue;
+      }
+
+      const parsed = parseQRCode(trimmedLine);
+      if (existingQRs.has(parsed.qrCode)) continue;
+
+      // Check if already in DB
+      if (existingInDBSet.has(parsed.qrCode)) {
+        currentSkipped.push({
+          qrCode: parsed.qrCode,
+          so: parsed.so,
+          rpro: parsed.rpro,
+          reason: 'Mã QR đã tồn tại trong kho'
+        });
+        continue;
+      }
+
+      const key = `${parsed.so || ''}|${parsed.rpro || ''}`;
+      const expected = expectedMap[key] || 0;
+      const current = trackingCountMap[key] || 0;
+
+      // Check if already full
+      if (expected > 0 && current >= expected) {
+        currentSkipped.push({
+          qrCode: parsed.qrCode,
+          so: parsed.so,
+          rpro: parsed.rpro,
+          reason: `CHẶN: Đã đủ số lượng (${expected}/${expected})`
+        });
+        continue;
+      }
+
+      // Fetch KH if not in expectedMap (though it should be if found in source)
+      let kh = '';
+      const sourceMatch = sourceData?.find(s => s.so === parsed.so && s.rpro === parsed.rpro);
+      if (sourceMatch) kh = sourceMatch.kh || '';
+
+      const newItem = {
+        ...parsed,
+        kh,
+        totalBoxes: expected || parsed.totalBoxes,
+        boxType: selectedBoxType,
+        locationPath: currentLocation,
+      };
+
+      newItems.push(newItem);
+      existingQRs.add(parsed.qrCode);
+      trackingCountMap[key] = (trackingCountMap[key] || 0) + 1;
+    }
+
+    if (newItems.length > 0) {
+      setScannedItems(prev => [...newItems, ...prev]);
+    }
+
+    if (currentSkipped.length > 0) {
+      setSkippedItems(currentSkipped);
+      setShowWarning(true);
+    }
+
+    setManualQR('');
+    setLoading(false);
+    setIsLoading(false);
   };
 
   const handleConfirmInbound = async () => {
@@ -469,57 +541,24 @@ export default function Inbound() {
     setMessage(null);
     
     try {
-      const now = new Date().toISOString();
-      const chunkSize = 500;
-      
-      for (let i = 0; i < scannedItems.length; i += chunkSize) {
-        const chunk = scannedItems.slice(i, i + chunkSize);
-        
-        // 1. Inbound Transactions
-        const txData = chunk.map(item => ({
-          qr_code: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
-          quantity: item.quantity || 1,
-          box_type: item.boxType,
-          total_boxes: item.totalBoxes || 0,
-          location_path: item.locationPath,
-          device_info: navigator.userAgent,
-          status: 'completed'
-        }));
+      // Use items as they are in the list (copy-paste to DB)
+      const itemsToProcess = scannedItems;
 
-        // 2. Inventory Balances (Upsert)
-        const balanceData = chunk.map(item => ({
-          qr_code: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
-          quantity: item.quantity || 1,
-          box_type: item.boxType,
-          total_boxes: item.totalBoxes || 0,
-          location_path: item.locationPath,
-          last_updated: now
-        }));
+      // Call Batch RPC (This handles all 3 steps: Inbound, Balance, Movement)
+      const chunkSize = 1000;
+      for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
+        const chunk = itemsToProcess.slice(i, i + chunkSize);
+        const { error: batchError } = await supabase.rpc('process_inbound_v5', {
+          p_data: {
+            device_info: navigator.userAgent,
+            items: chunk
+          }
+        });
 
-        // 3. Movement logs
-        const movementData = chunk.map(item => ({
-          type: 'INBOUND',
-          qr_code: item.qrCode,
-          to_location: item.locationPath,
-          quantity: item.quantity || 1,
-          remark: 'Nhập kho (Bulk Processing)'
-        }));
-
-        const [txResult, balanceResult, movementResult] = await Promise.all([
-          supabase.from('inbound_transactions').insert(txData),
-          supabase.from('inventory_balances').upsert(balanceData, { onConflict: 'qr_code' }),
-          supabase.from('inventory_movements').insert(movementData)
-        ]);
-
-        if (txResult.error) throw txResult.error;
-        if (balanceResult.error) throw balanceResult.error;
-        if (movementResult.error) throw movementResult.error;
+        if (batchError) {
+          console.error('Batch process error at chunk:', i, batchError);
+          throw new Error(`Lỗi xử lý hàng loạt: ${batchError.message}`);
+        }
       }
 
       setMessage({ type: 'success', text: `Đã nhập kho thành công ${scannedItems.length} kiện hàng.` });
@@ -1078,13 +1117,11 @@ export default function Inbound() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KH</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1101,9 +1138,8 @@ export default function Inbound() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.rpro}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase font-bold text-blue-600">{item.kh || '-'}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 

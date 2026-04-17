@@ -51,7 +51,17 @@ export default function Transfer() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);
-  const historyPageSize = 50;
+  const historyPageSize = 100;
+
+  const [historySearch, setHistorySearch] = useState({
+    qrCode: '',
+    so: '',
+    rpro: '',
+    kh: ''
+  });
+
+  const [scannedPage, setScannedPage] = useState(1);
+  const scannedPageSize = 20;
 
   useEffect(() => {
     fetchLocations();
@@ -74,10 +84,17 @@ export default function Transfer() {
     const from = (historyPage - 1) * historyPageSize;
     const to = from + historyPageSize - 1;
 
-    const { data, count, error } = await supabase
+    let query = supabase
       .from('inventory_movements')
       .select('*', { count: 'exact' })
-      .eq('type', 'TRANSFER')
+      .eq('type', 'TRANSFER');
+
+    if (historySearch.qrCode) query = query.ilike('qr_code', `%${historySearch.qrCode}%`);
+    if (historySearch.so) query = query.ilike('so', `%${historySearch.so}%`);
+    if (historySearch.rpro) query = query.ilike('rpro', `%${historySearch.rpro}%`);
+    if (historySearch.kh) query = query.ilike('kh', `%${historySearch.kh}%`);
+
+    const { data, count, error } = await query
       .order('created_at', { ascending: false })
       .range(from, to);
     
@@ -165,41 +182,88 @@ export default function Transfer() {
     setScannedItems(prev => [newItem, ...prev]);
   };
 
-  const handleProcessManual = () => {
+  const handleProcessManual = async () => {
     if (!manualQR.trim()) return;
     
     const lines = manualQR.split('\n').filter(line => line.trim() !== '');
     let currentLocation = matchedLocation?.full_path || locationInput || '';
+    
+    setLoading(true);
+    setIsLoading(true);
+    
+    try {
+      const qrBatch: { raw: string, parsed: any, targetLoc: string }[] = [];
+      const qrCodesToFetch: string[] = [];
 
-    const processLines = async () => {
-      setLoading(true);
-      setIsLoading(true);
-      
+      // 1. First pass: Parse and separate locations from QRs
       for (const line of lines) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
         if (!trimmedLine.includes('|')) {
           currentLocation = trimmedLine;
-          // If we find a location, we can also update the main location input if it's empty
           if (!locationInput) setLocationInput(currentLocation);
           continue;
         }
+
+        const parsed = parseQRCode(trimmedLine);
+        if (scannedItems.some(item => item.qrCode === parsed.qrCode)) continue;
         
-        await processSingleQR(trimmedLine, currentLocation);
-        
-        // Small delay to allow UI to breathe if there are many items
-        if (lines.length > 10) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
+        qrBatch.push({ raw: trimmedLine, parsed, targetLoc: currentLocation });
+        qrCodesToFetch.push(parsed.qrCode);
       }
+
+      if (qrBatch.length === 0) {
+        setManualQR('');
+        setLoading(false);
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Batch fetch from inventory
+      const { data: inventoryItems, error } = await supabase
+        .from('inventory_balances')
+        .select('*')
+        .in('qr_code', qrCodesToFetch);
+
+      if (error) throw error;
+
+      const inventoryMap = new Map(inventoryItems?.map(inv => [inv.qr_code, inv]) || []);
       
+      // 3. Construct new items
+      const newItems = qrBatch.map(batchInfo => {
+        const { parsed, targetLoc } = batchInfo;
+        const inventoryItem = inventoryMap.get(parsed.qrCode);
+        
+        return {
+          ...parsed,
+          id: inventoryItem?.id || null,
+          kh: inventoryItem?.kh || 'N/A',
+          fromLocation: inventoryItem?.location_path || 'N/A',
+          toLocation: targetLoc || matchedLocation?.full_path || locationInput,
+          quantity: inventoryItem?.quantity || parsed.quantity,
+          boxType: inventoryItem?.box_type || 'N/A',
+          status: (!inventoryItem) ? 'Wrong' : 'OK',
+          note: (!inventoryItem) ? 'Không có trong tồn kho' : ''
+        };
+      });
+
+      // 4. Handle wrong items specifically if needed (optional feedback)
+      const wrongCount = newItems.filter(i => i.status === 'Wrong').length;
+      if (wrongCount > 0) {
+        setMessage({ type: 'error', text: `Có ${wrongCount} kiện hàng không tìm thấy trong kho.` });
+      } else {
+        setMessage({ type: 'success', text: `Đã xử lý ${newItems.length} kiện hàng.` });
+      }
+
+      setScannedItems(prev => [...newItems, ...prev]);
       setManualQR('');
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xử lý mã: ' + err.message });
+    } finally {
       setLoading(false);
       setIsLoading(false);
-    };
-
-    processLines();
+    }
   };
 
   const confirmTransfer = async () => {
@@ -221,41 +285,36 @@ export default function Transfer() {
     setLoading(true);
     setIsLoading(true);
     try {
-      const chunkSize = 100;
+      const now = new Date().toISOString();
+      const chunkSize = 2000; // Even larger chunk for RPC
+      
       for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
         const chunk = itemsToProcess.slice(i, i + chunkSize);
         
-        const updatePromises = chunk.map(item => 
-          supabase
-            .from('inventory_balances')
-            .update({ 
-              location_path: item.toLocation,
-              last_updated: new Date().toISOString()
-            })
-            .eq('id', item.id)
-        );
-        
-        const movementData = chunk.map(item => ({
-          type: 'TRANSFER',
-          qr_code: item.qrCode,
-          from_location: item.fromLocation,
-          to_location: item.toLocation,
-          quantity: item.quantity,
-          remark: `Chuyển vị trí hàng (Batch) - ${authUser?.email || 'System'}`
-        }));
+        const payload = {
+          device_info: `Transfer Tab - ${authUser?.email || 'System'}`,
+          items: chunk.map(item => ({
+            id: item.id,
+            qrCode: item.qrCode,
+            so: item.so,
+            rpro: item.rpro,
+            kh: item.kh,
+            fromLocation: item.fromLocation,
+            toLocation: item.toLocation,
+            quantity: item.quantity,
+            remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
+          }))
+        };
 
-        const [updateResults, movementResult] = await Promise.all([
-          Promise.all(updatePromises),
-          supabase.from('inventory_movements').insert(movementData)
-        ]);
+        const { error: rpcError } = await supabase.rpc('process_transfer_v1', { p_data: payload });
 
-        const firstError = updateResults.find(r => r.error)?.error || movementResult.error;
-        if (firstError) throw firstError;
+        if (rpcError) throw rpcError;
       }
 
       setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
+      setScannedPage(1);
       clearAppCache();
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
@@ -329,6 +388,9 @@ export default function Transfer() {
   const exportHistory = (format: 'xlsx' | 'csv') => {
     const data = historyData.map(item => ({
       'QRCODE': item.qr_code,
+      'SO': item.so || '',
+      'RPRO': item.rpro || '',
+      'KH': item.kh || '',
       'DATE': formatDate(item.created_at),
       'FROM': item.from_location,
       'TO': item.to_location,
@@ -533,7 +595,7 @@ export default function Transfer() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {scannedItems.map((item, index) => (
+                        {scannedItems.slice((scannedPage - 1) * scannedPageSize, scannedPage * scannedPageSize).map((item, index) => (
                           <tr 
                             key={item.qrCode} 
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-rose-50' : ''}`}
@@ -579,39 +641,107 @@ export default function Transfer() {
                     </table>
                   )}
                 </div>
+
+                {scannedItems.length > scannedPageSize && (
+                  <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      Hiển thị {Math.min(scannedItems.length, (scannedPage - 1) * scannedPageSize + 1)}-{Math.min(scannedItems.length, scannedPage * scannedPageSize)} trong {scannedItems.length}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setScannedPage(prev => Math.max(1, prev - 1))}
+                        disabled={scannedPage === 1}
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                      >
+                        TRƯỚC
+                      </button>
+                      <div className="flex items-center px-3 bg-white border border-slate-200 rounded-lg text-[10px] font-black">
+                        {scannedPage} / {Math.ceil(scannedItems.length / scannedPageSize)}
+                      </div>
+                      <button
+                        onClick={() => setScannedPage(prev => Math.min(Math.ceil(scannedItems.length / scannedPageSize), prev + 1))}
+                        disabled={scannedPage === Math.ceil(scannedItems.length / scannedPageSize)}
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                      >
+                        SAU
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </>
       ) : (
         <div className="bg-white rounded-2xl border-2 border-blue-600 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-            <div className="flex items-center gap-4">
-              <h2 className="text-lg font-bold text-blue-900 uppercase">Lịch sử chuyển vị trí</h2>
-              {isAdmin && selectedHistory.size > 0 && (
+          <div className="p-6 border-b border-slate-100 bg-blue-50/50">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-lg font-bold text-blue-900 uppercase tracking-tight">Lịch sử chuyển vị trí</h2>
+                  {isAdmin && selectedHistory.size > 0 && (
+                    <button
+                      onClick={deleteSelectedHistory}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Xóa đã chọn ({selectedHistory.size})
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => exportHistory('xlsx')}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5 text-blue-600" />
+                    Excel
+                  </button>
+                  <button 
+                    onClick={fetchHistory}
+                    className="p-2 text-blue-600 hover:bg-blue-200/50 rounded-lg transition-all"
+                  >
+                    <HistoryIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <input
+                  type="text"
+                  placeholder="Mã QR..."
+                  value={historySearch.qrCode}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, qrCode: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="SO..."
+                  value={historySearch.so}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, so: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="RPRO..."
+                  value={historySearch.rpro}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, rpro: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="Khách hàng..."
+                  value={historySearch.kh}
+                  onChange={(e) => setHistorySearch(prev => ({ ...prev, kh: e.target.value }))}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
+                />
                 <button
-                  onClick={deleteSelectedHistory}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all"
+                  onClick={() => { setHistoryPage(1); fetchHistory(); }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-md active:scale-95"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Xóa đã chọn ({selectedHistory.size})
+                  TÌM KIẾM
                 </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => exportHistory('xlsx')}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
-              >
-                <Download className="w-3.5 h-3.5 text-blue-600" />
-                Excel
-              </button>
-              <button 
-                onClick={fetchHistory}
-                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-              >
-                <CheckCircle2 className="w-5 h-5" />
-              </button>
+              </div>
             </div>
           </div>
           {/* Desktop Table View */}
@@ -638,13 +768,16 @@ export default function Transfer() {
                         className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">QRCODE</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">VỊ TRÍ CŨ</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">VỊ TRÍ MỚI</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">SỐ LƯỢNG</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">GHI CHÚ</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">THỜI GIAN</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center"></th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KH</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ CŨ</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ MỚI</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ LƯỢNG</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">GHI CHÚ</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">THỜI GIAN</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -659,6 +792,9 @@ export default function Transfer() {
                         />
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so || '-'}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.rpro || '-'}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase font-bold text-blue-600">{item.kh || '-'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded">{item.from_location}</span>
                       </td>
@@ -710,7 +846,12 @@ export default function Transfer() {
                       />
                       <div>
                         <div className="text-sm font-black text-slate-900">{item.qr_code}</div>
-                        <div className="text-xs font-bold text-blue-600">Số lượng: {item.quantity}</div>
+                        <div className="text-[10px] text-slate-500 uppercase flex gap-2">
+                          <span>SO: {item.so || '-'}</span>
+                          <span>RPRO: {item.rpro || '-'}</span>
+                        </div>
+                        <div className="text-xs font-bold text-blue-600 uppercase">KH: {item.kh || 'N/A'}</div>
+                        <div className="text-xs font-bold text-slate-700">Số lượng: {item.quantity}</div>
                       </div>
                     </div>
                     {isAdmin && (

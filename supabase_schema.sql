@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type TEXT NOT NULL,
     qr_code TEXT NOT NULL,
+    so TEXT,
+    rpro TEXT,
+    kh TEXT,
     from_location TEXT,
     to_location TEXT,
     quantity INTEGER NOT NULL,
@@ -211,11 +214,14 @@ BEGIN
 
     -- 3. Record Movements in bulk
     INSERT INTO inventory_movements (
-        type, qr_code, to_location, quantity, remark
+        type, qr_code, so, rpro, kh, to_location, quantity, remark
     )
     SELECT 
         'INBOUND',
         (elem->>'qrCode'),
+        (elem->>'so'),
+        (elem->>'rpro'),
+        (elem->>'kh'),
         (elem->>'locationPath'),
         COALESCE((elem->>'quantity')::INTEGER, 1),
         'Nhập kho (Bulk Process)'
@@ -297,10 +303,13 @@ BEGIN
 
         -- Record Movement
         INSERT INTO inventory_movements (
-            type, qr_code, from_location, quantity, remark
+            type, qr_code, so, rpro, kh, from_location, quantity, remark
         ) VALUES (
             'OUTBOUND',
             v_item.qr_code,
+            v_item.so,
+            v_item.rpro,
+            v_item.kh,
             v_item.loc,
             v_item.qty,
             'Xuất kho: ' || COALESCE(v_item.note, 'Bình thường')
@@ -309,6 +318,41 @@ BEGIN
 
     -- 3. Cleanup: Delete zero/negative inventory
     DELETE FROM inventory_balances WHERE quantity <= 0;
+
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION process_transfer_v1(
+    p_data JSONB
+) RETURNS VOID AS $$
+DECLARE
+    v_device_info TEXT;
+BEGIN
+    v_device_info := p_data->>'device_info';
+
+    -- 1. Update Inventory Balances
+    -- We use a join with the incoming JSON to update in one shot
+    UPDATE inventory_balances ib
+    SET location_path = t.to_location,
+        last_updated = now()
+    FROM jsonb_to_recordset(p_data->'items') AS t(id UUID, to_location TEXT)
+    WHERE ib.id = t.id;
+
+    -- 2. Record Movements in bulk
+    INSERT INTO inventory_movements (
+        type, qr_code, so, rpro, kh, from_location, to_location, quantity, remark
+    )
+    SELECT 
+        'TRANSFER',
+        (elem->>'qrCode'),
+        (elem->>'so'),
+        (elem->>'rpro'),
+        (elem->>'kh'),
+        (elem->>'fromLocation'),
+        (elem->>'toLocation'),
+        COALESCE((elem->>'quantity')::INTEGER, 1),
+        COALESCE((elem->>'remark'), 'Chuyển vị trí hàng (Bulk RPC)')
+    FROM jsonb_array_elements(p_data->'items') AS elem;
 
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

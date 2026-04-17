@@ -142,7 +142,6 @@ $$ LANGUAGE plpgsql;
 
 -- 11. Process Batch Inbound Function (Bulk Optimized)
 DROP FUNCTION IF EXISTS process_inbound_v5(JSONB);
-
 CREATE OR REPLACE FUNCTION process_inbound_v5(
     p_data JSONB
 ) RETURNS VOID AS $$
@@ -256,6 +255,7 @@ FROM inventory_balances ib
 GROUP BY rpro;
 
 -- 13. Process Batch Outbound Function (Bulk Optimized)
+DROP FUNCTION IF EXISTS process_outbound_v1(JSONB);
 CREATE OR REPLACE FUNCTION process_outbound_v1(
     p_data JSONB
 ) RETURNS VOID AS $$
@@ -322,6 +322,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS process_transfer_v1(JSONB);
 CREATE OR REPLACE FUNCTION process_transfer_v1(
     p_data JSONB
 ) RETURNS VOID AS $$
@@ -332,10 +333,11 @@ BEGIN
 
     -- 1. Update Inventory Balances
     -- We use a join with the incoming JSON to update in one shot
+    -- Note: Handle toLocation (camelCase) from frontend
     UPDATE inventory_balances ib
-    SET location_path = t.to_location,
+    SET location_path = t."toLocation",
         last_updated = now()
-    FROM jsonb_to_recordset(p_data->'items') AS t(id UUID, to_location TEXT)
+    FROM jsonb_to_recordset(p_data->'items') AS t(id UUID, "toLocation" TEXT)
     WHERE ib.id = t.id;
 
     -- 2. Record Movements in bulk

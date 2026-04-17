@@ -12,6 +12,7 @@ import {
   Trash2,
   Package,
   MapPin,
+  Search,
   ArrowRight,
   History as HistoryIcon,
   Download,
@@ -32,6 +33,8 @@ export default function Transfer() {
     const saved = localStorage.getItem('transfer_scanned_items');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const [scannedSearch, setScannedSearch] = useState('');
 
   useEffect(() => {
     localStorage.setItem('transfer_scanned_items', JSON.stringify(scannedItems));
@@ -59,9 +62,6 @@ export default function Transfer() {
     rpro: '',
     kh: ''
   });
-
-  const [scannedPage, setScannedPage] = useState(1);
-  const scannedPageSize = 20;
 
   useEffect(() => {
     fetchLocations();
@@ -111,11 +111,18 @@ export default function Transfer() {
   const matchedLocation = locations.find(l => l.full_path.trim().toLowerCase() === locationInput.trim().toLowerCase());
 
   useEffect(() => {
-    if (scannedItems.length > 0 && scannedItems.length < 500) {
-      setScannedItems(prev => prev.map(item => ({
-        ...item,
-        toLocation: matchedLocation?.full_path || locationInput
-      })));
+    if (scannedItems.length > 0) {
+      // Optimized update for target location
+      const newToLocation = matchedLocation?.full_path || locationInput;
+      setScannedItems(prev => {
+        // Only update if something changed to avoid infinite loop or unnecessary re-renders
+        const needsUpdate = prev.some(item => item.toLocation !== newToLocation);
+        if (!needsUpdate) return prev;
+        return prev.map(item => ({
+          ...item,
+          toLocation: newToLocation
+        }));
+      });
     }
   }, [locationInput, matchedLocation]);
 
@@ -286,35 +293,44 @@ export default function Transfer() {
     setIsLoading(true);
     try {
       const now = new Date().toISOString();
-      const chunkSize = 2000; // Even larger chunk for RPC
+      const chunkSize = 1000; // Optimal chunk for bulk upsert
       
       for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
         const chunk = itemsToProcess.slice(i, i + chunkSize);
         
-        const payload = {
-          device_info: `Transfer Tab - ${authUser?.email || 'System'}`,
-          items: chunk.map(item => ({
-            id: item.id,
-            qrCode: item.qrCode,
-            so: item.so,
-            rpro: item.rpro,
-            kh: item.kh,
-            fromLocation: item.fromLocation,
-            toLocation: item.toLocation,
-            quantity: item.quantity,
-            remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
-          }))
-        };
+        // 1. Prepare bulk update data for inventory_balances
+        const updateData = chunk.map(item => ({
+          id: item.id,
+          location_path: item.toLocation,
+          last_updated: now
+        }));
+        
+        // 2. Prepare movement logs
+        const movementData = chunk.map(item => ({
+          type: 'TRANSFER',
+          qr_code: item.qrCode,
+          so: item.so,
+          rpro: item.rpro,
+          kh: item.kh,
+          from_location: item.fromLocation,
+          to_location: item.toLocation,
+          quantity: item.quantity,
+          remark: `Chuyển vị trí hàng (Batch) - ${authUser?.email || 'System'}`
+        }));
 
-        const { error: rpcError } = await supabase.rpc('process_transfer_v1', { p_data: payload });
+        // 3. Execute concurrently in smaller chunks for performance
+        const [updateResult, movementResult] = await Promise.all([
+          supabase.from('inventory_balances').upsert(updateData),
+          supabase.from('inventory_movements').insert(movementData)
+        ]);
 
-        if (rpcError) throw rpcError;
+        if (updateResult.error) throw updateResult.error;
+        if (movementResult.error) throw movementResult.error;
       }
 
       setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
       setScannedItems([]);
       setSelectedScanned(new Set());
-      setScannedPage(1);
       clearAppCache();
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
@@ -521,9 +537,21 @@ export default function Transfer() {
 
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
-                <div className="p-6 border-b border-blue-100 flex items-center justify-between bg-blue-600 shadow-md">
-                  <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
-                  <div className="flex items-center gap-2">
+                <div className="p-6 border-b border-blue-100 bg-blue-600 shadow-md">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
+                    <div className="flex-1 md:max-w-xs relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+                      <input
+                        type="text"
+                        placeholder="Tìm SO, RPRO, KH..."
+                        value={scannedSearch}
+                        onChange={(e) => setScannedSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
                     <button
                       onClick={() => setIsScanning(!isScanning)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm transition-all ${
@@ -595,7 +623,17 @@ export default function Transfer() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {scannedItems.slice((scannedPage - 1) * scannedPageSize, scannedPage * scannedPageSize).map((item, index) => (
+                        {scannedItems
+                          .filter(item => {
+                            if (!scannedSearch) return true;
+                            const s = scannedSearch.toLowerCase();
+                            return (item.qrCode?.toLowerCase().includes(s) || 
+                                   item.so?.toLowerCase().includes(s) || 
+                                   item.rpro?.toLowerCase().includes(s) || 
+                                   item.kh?.toLowerCase().includes(s));
+                          })
+                          .slice(0, 100) // Limit display for performance
+                          .map((item, index) => (
                           <tr 
                             key={item.qrCode} 
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-rose-50' : ''}`}
@@ -642,30 +680,11 @@ export default function Transfer() {
                   )}
                 </div>
 
-                {scannedItems.length > scannedPageSize && (
-                  <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">
-                      Hiển thị {Math.min(scannedItems.length, (scannedPage - 1) * scannedPageSize + 1)}-{Math.min(scannedItems.length, scannedPage * scannedPageSize)} trong {scannedItems.length}
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => setScannedPage(prev => Math.max(1, prev - 1))}
-                        disabled={scannedPage === 1}
-                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-                      >
-                        TRƯỚC
-                      </button>
-                      <div className="flex items-center px-3 bg-white border border-slate-200 rounded-lg text-[10px] font-black">
-                        {scannedPage} / {Math.ceil(scannedItems.length / scannedPageSize)}
-                      </div>
-                      <button
-                        onClick={() => setScannedPage(prev => Math.min(Math.ceil(scannedItems.length / scannedPageSize), prev + 1))}
-                        disabled={scannedPage === Math.ceil(scannedItems.length / scannedPageSize)}
-                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-                      >
-                        SAU
-                      </button>
-                    </div>
+                {scannedItems.length > 100 && (
+                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-center">
+                    <p className="text-xs text-slate-500 italic">
+                      Đang hiển thị 100/{scannedItems.length} kiện hàng. Xác nhận chuyển để xử lý toàn bộ.
+                    </p>
                   </div>
                 )}
               </div>
@@ -869,7 +888,7 @@ export default function Transfer() {
                       <div className="text-[10px] font-black text-slate-400 uppercase">Từ vị trí</div>
                       <div className="text-xs font-bold text-slate-600">{item.from_location}</div>
                     </div>
-                    <ArrowRightIcon className="w-4 h-4 text-slate-300" />
+                    <ArrowRight className="w-4 h-4 text-slate-300" />
                     <div className="flex-1 text-right">
                       <div className="text-[10px] font-black text-slate-400 uppercase">Đến vị trí</div>
                       <div className="text-xs font-bold text-blue-700">{item.to_location}</div>

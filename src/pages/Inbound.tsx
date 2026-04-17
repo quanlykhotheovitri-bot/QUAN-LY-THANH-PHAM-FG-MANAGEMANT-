@@ -506,9 +506,6 @@ export default function Inbound() {
         const movementData = chunk.map(item => ({
           type: 'INBOUND',
           qr_code: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
           to_location: item.locationPath,
           quantity: item.quantity || 1,
           remark: 'Nhập kho (Bulk Processing)'

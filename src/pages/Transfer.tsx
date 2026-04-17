@@ -90,9 +90,6 @@ export default function Transfer() {
       .eq('type', 'TRANSFER');
 
     if (historySearch.qrCode) query = query.ilike('qr_code', `%${historySearch.qrCode}%`);
-    if (historySearch.so) query = query.ilike('so', `%${historySearch.so}%`);
-    if (historySearch.rpro) query = query.ilike('rpro', `%${historySearch.rpro}%`);
-    if (historySearch.kh) query = query.ilike('kh', `%${historySearch.kh}%`);
 
     const { data, count, error } = await query
       .order('created_at', { ascending: false })
@@ -293,9 +290,6 @@ export default function Transfer() {
         const movementData = chunk.map(item => ({
           type: 'TRANSFER',
           qr_code: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
           from_location: item.fromLocation,
           to_location: item.toLocation,
           quantity: item.quantity,
@@ -681,33 +675,12 @@ export default function Transfer() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
                 <input
                   type="text"
                   placeholder="Mã QR..."
                   value={historySearch.qrCode}
                   onChange={(e) => setHistorySearch(prev => ({ ...prev, qrCode: e.target.value }))}
-                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
-                />
-                <input
-                  type="text"
-                  placeholder="SO..."
-                  value={historySearch.so}
-                  onChange={(e) => setHistorySearch(prev => ({ ...prev, so: e.target.value }))}
-                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
-                />
-                <input
-                  type="text"
-                  placeholder="RPRO..."
-                  value={historySearch.rpro}
-                  onChange={(e) => setHistorySearch(prev => ({ ...prev, rpro: e.target.value }))}
-                  className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
-                />
-                <input
-                  type="text"
-                  placeholder="Khách hàng..."
-                  value={historySearch.kh}
-                  onChange={(e) => setHistorySearch(prev => ({ ...prev, kh: e.target.value }))}
                   className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
                 />
                 <button
@@ -744,9 +717,6 @@ export default function Transfer() {
                       />
                     </th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KH</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ CŨ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ MỚI</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ LƯỢNG</th>
@@ -767,9 +737,6 @@ export default function Transfer() {
                         />
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so || '-'}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.rpro || '-'}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase font-bold text-blue-600">{item.kh || '-'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded">{item.from_location}</span>
                       </td>
@@ -821,11 +788,6 @@ export default function Transfer() {
                       />
                       <div>
                         <div className="text-sm font-black text-slate-900">{item.qr_code}</div>
-                        <div className="text-[10px] text-slate-500 uppercase flex gap-2">
-                          <span>SO: {item.so || '-'}</span>
-                          <span>RPRO: {item.rpro || '-'}</span>
-                        </div>
-                        <div className="text-xs font-bold text-blue-600 uppercase">KH: {item.kh || 'N/A'}</div>
                         <div className="text-xs font-bold text-slate-700">Số lượng: {item.quantity}</div>
                       </div>
                     </div>

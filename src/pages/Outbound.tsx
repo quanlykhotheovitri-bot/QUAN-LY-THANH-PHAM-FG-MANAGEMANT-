@@ -1081,9 +1081,6 @@ export default function Outbound() {
           chunk.map(item => ({
             type: 'OUTBOUND',
             qr_code: item.qrCode,
-            so: item.so,
-            rpro: item.rpro,
-            kh: item.kh,
             from_location: item.locationPath,
             quantity: item.outQty,
             remark: 'Xuất kho (Manual Confirm)'

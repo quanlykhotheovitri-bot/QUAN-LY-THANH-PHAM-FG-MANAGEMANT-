@@ -30,6 +30,7 @@ export default function PlasticBins() {
   // Data states
   const [customers, setCustomers] = useState<PlasticBinCustomer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [returnSearch, setReturnSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'WRONG'>('ALL');
 
   // Scan/Process states
@@ -74,17 +75,6 @@ export default function PlasticBins() {
     }
   }
 
-  const filteredScanned = scannedReturns.filter(item => {
-    if (statusFilter === 'OK') return item.customer_name !== 'Chưa xác định';
-    if (statusFilter === 'WRONG') return item.customer_name === 'Chưa xác định';
-    return true;
-  });
-
-  const filteredRecent = recentReturns.filter(item => {
-    if (statusFilter === 'OK') return item.customer_name !== 'Chưa xác định';
-    if (statusFilter === 'WRONG') return item.customer_name === 'Chưa xác định';
-    return true;
-  });
   async function fetchCustomers() {
     try {
       const { data, error } = await supabase
@@ -337,6 +327,31 @@ export default function PlasticBins() {
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const getFilteredReturns = (items: any[]) => {
+    return items.filter(item => {
+      // Status filter
+      if (statusFilter !== 'ALL') {
+        const hasCustomer = !!item.customer_name && item.customer_name !== 'CHƯA XÁC ĐỊNH';
+        if (statusFilter === 'OK' && !hasCustomer) return false;
+        if (statusFilter === 'WRONG' && hasCustomer) return false;
+      }
+
+      // Search filter
+      if (returnSearch.trim()) {
+        const searchLower = returnSearch.toLowerCase().trim();
+        const matches = (item.qrcode?.toLowerCase().includes(searchLower)) || 
+                        (item.customer_name?.toLowerCase().includes(searchLower)) ||
+                        (item.customer_code?.toLowerCase().includes(searchLower));
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  };
+
+  const filteredScannedReturns = getFilteredReturns(scannedReturns);
+  const filteredRecentReturns = getFilteredReturns(recentReturns);
+
   return (
     <div className="space-y-6">
       {/* Tab Navigation */}
@@ -426,6 +441,16 @@ export default function PlasticBins() {
                   Danh sách trả thùng ({scannedReturns.length + recentReturns.length})
                 </h2>
                 <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50" />
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm QR, Khách hàng..."
+                      value={returnSearch}
+                      onChange={(e) => setReturnSearch(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-xs text-white placeholder:text-white/50 focus:bg-white/20 outline-none w-32 md:w-48 transition-all"
+                    />
+                  </div>
                   <select
                     value={statusFilter}
                     onChange={(e: any) => setStatusFilter(e.target.value)}
@@ -438,11 +463,11 @@ export default function PlasticBins() {
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 text-xs font-bold text-white/90">
                       <div className="w-3 h-3 rounded-full bg-blue-400 border border-white/20"></div>
-                      <span>Chờ nhập: {scannedReturns.length}</span>
+                      <span>Chờ nhập: {filteredScannedReturns.length}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-bold text-white/90">
                       <div className="w-3 h-3 rounded-full bg-emerald-400 border border-white/20"></div>
-                      <span>Đã lưu: {recentReturns.length}</span>
+                      <span>Đã lưu: {filteredRecentReturns.length}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -467,10 +492,10 @@ export default function PlasticBins() {
               </div>
               
               <div className="overflow-x-auto">
-                {scannedReturns.length === 0 && recentReturns.length === 0 ? (
+                {filteredScannedReturns.length === 0 && filteredRecentReturns.length === 0 ? (
                   <div className="p-12 text-center">
                     <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                    <p className="text-slate-400">Chưa có kiện hàng nào được dán hoặc đã lưu trong hôm nay</p>
+                    <p className="text-slate-400">Không tìm thấy dữ liệu phù hợp</p>
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse">
@@ -486,7 +511,7 @@ export default function PlasticBins() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {/* Hiển thị danh sách chờ nhập trước */}
-                      {filteredScanned.map((item) => (
+                      {filteredScannedReturns.map((item) => (
                         <tr key={item.id} className="hover:bg-blue-50/30 transition-colors bg-blue-50/10">
                           <td className="px-6 py-4 text-sm font-bold text-slate-500">
                             {new Date(item.return_date).toLocaleDateString('vi-VN')}
@@ -534,7 +559,7 @@ export default function PlasticBins() {
                       ))}
                       
                       {/* Hiển thị danh sách đã lưu */}
-                      {filteredRecent.map((item) => (
+                      {filteredRecentReturns.map((item) => (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors opacity-80">
                           <td className="px-6 py-4 text-sm text-slate-400">
                             {new Date(item.return_date).toLocaleDateString('vi-VN')}

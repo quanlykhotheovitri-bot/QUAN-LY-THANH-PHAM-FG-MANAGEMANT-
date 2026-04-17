@@ -66,9 +66,16 @@ export default function Inbound() {
 
   useEffect(() => {
     if (activeTab === 'history') {
-      fetchHistory();
+      const timer = setTimeout(() => {
+        if (historyPage === 1) {
+          fetchHistory();
+        } else {
+          setHistoryPage(1);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [activeTab, historyPage]);
+  }, [activeTab, historyPage, historySearch]);
 
   const filteredHistory = historyData.filter(item => {
     const status = orderStatusMap[`${item.so}|${item.rpro}`] || '';
@@ -83,11 +90,12 @@ export default function Inbound() {
     // Search filter (text)
     if (!historySearch.trim()) return true;
     
-    const searchLower = historySearch.toLowerCase();
+    const searchLower = historySearch.toLowerCase().trim();
     return (
-      item.so.toLowerCase().includes(searchLower) ||
-      item.rpro.toLowerCase().includes(searchLower) ||
-      item.qr_code.toLowerCase().includes(searchLower) ||
+      item.so?.toLowerCase().includes(searchLower) ||
+      item.rpro?.toLowerCase().includes(searchLower) ||
+      item.qr_code?.toLowerCase().includes(searchLower) ||
+      item.kh?.toLowerCase().includes(searchLower) ||
       status.toLowerCase().includes(searchLower)
     );
   });
@@ -111,15 +119,49 @@ export default function Inbound() {
     XLSX.writeFile(wb, `InboundHistory_${new Date().toISOString().split('T')[0]}.${format}`);
   };
 
+  const getStatus = (item: any) => {
+    const statusText = orderStatusMap[`${item.so}|${item.rpro}`];
+    if (!statusText) return { status: 'Chưa có thông tin', class: 'text-slate-400' };
+    if (statusText === 'Đủ đơn') return { status: 'OK', class: 'text-emerald-600' };
+    return { status: 'Wrong', class: 'text-rose-600' };
+  };
+
+  const filteredScanned = scannedItems.filter(item => {
+    // Search filter
+    if (scannedSearch.trim()) {
+      const searchLower = scannedSearch.toLowerCase().trim();
+      const matchesSearch = 
+        item.qrCode?.toLowerCase().includes(searchLower) ||
+        item.so?.toLowerCase().includes(searchLower) ||
+        item.rpro?.toLowerCase().includes(searchLower) ||
+        item.kh?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+
+    // Status filter
+    const status = getStatus(item).status;
+    if (scannedStatusFilter === 'ok') return status === 'OK' || status === 'Đúng';
+    if (scannedStatusFilter === 'wrong') return status === 'Wrong' || status === 'Sai' || status === 'Chưa có thông tin';
+    
+    return true;
+  });
+
   async function fetchHistory() {
     setHistoryLoading(true);
     setIsLoading(true);
     const from = (historyPage - 1) * historyPageSize;
     const to = from + historyPageSize - 1;
 
-    const { data, count, error } = await supabase
+    let query = supabase
       .from('inbound_transactions')
-      .select('*', { count: 'exact' })
+      .select('*', { count: 'exact' });
+
+    if (historySearch.trim()) {
+      const search = historySearch.trim();
+      query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+    }
+
+    const { data, count, error } = await query
       .order('created_at', { ascending: false })
       .range(from, to);
     
@@ -818,7 +860,7 @@ export default function Inbound() {
                   ) : (
                     <>
                       <Save className="w-6 h-6" />
-                      LƯU VÀO KHO ({scannedItems.length})
+                      LƯU VÀO KHO {scannedSearch || scannedStatusFilter !== 'all' ? `(${filteredScanned.length}/${scannedItems.length})` : `(${scannedItems.length})`}
                     </>
                   )}
                 </button>
@@ -838,13 +880,15 @@ export default function Inbound() {
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl border-2 border-emerald-500 shadow-lg overflow-hidden">
                 <div className="p-6 border-b border-emerald-100 flex items-center justify-between bg-emerald-600 shadow-md">
-                  <h2 className="text-lg font-bold text-white">Danh sách chờ nhập ({scannedItems.length})</h2>
+                  <h2 className="text-lg font-bold text-white uppercase tracking-tight">
+                    Danh sách chờ nhập {scannedSearch || scannedStatusFilter !== 'all' ? `(${filteredScanned.length}/${scannedItems.length})` : `(${scannedItems.length})`}
+                  </h2>
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50" />
                       <input
                         type="text"
-                        placeholder="Tìm kiếm..."
+                        placeholder="Tìm kiếm SO, RPRO, Khách hàng..."
                         value={scannedSearch}
                         onChange={(e) => setScannedSearch(e.target.value)}
                         className="pl-8 pr-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-xs text-white placeholder:text-white/50 focus:bg-white/20 outline-none w-32 md:w-48 transition-all"
@@ -921,8 +965,16 @@ export default function Inbound() {
                           <th className="px-2 py-3 border border-slate-300"></th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {scannedItems.slice(0, 100).map((item, index) => (
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredScanned.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="px-6 py-12 text-center">
+                            <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                            <p className="text-slate-400 italic text-sm">Không tìm thấy dữ liệu phù hợp</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredScanned.map((item, index) => (
                           <tr 
                             key={item.qrCode}
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''}`}
@@ -952,7 +1004,7 @@ export default function Inbound() {
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {isAdmin && (
                                 <button 
-                                  onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== index))}
+                                  onClick={() => setScannedItems(prev => prev.filter(i => i.qrCode !== item.qrCode))}
                                   className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -960,15 +1012,16 @@ export default function Inbound() {
                               )}
                             </td>
                           </tr>
-                        ))}
-                        {scannedItems.length > 100 && (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-6 text-center text-slate-400 italic bg-slate-50">
-                              Đang hiển thị 100/{scannedItems.length} kiện hàng. Toàn bộ dữ liệu sẽ được lưu khi bạn nhấn xác nhận.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
+                        ))
+                      )}
+                      {filteredScanned.length > 100 && (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-6 text-center text-slate-400 italic bg-slate-50">
+                            Đang hiển thị 100/{filteredScanned.length} kiện hàng.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
                     </table>
                   )}
                 </div>
@@ -995,7 +1048,7 @@ export default function Inbound() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Tìm kiếm SO, RPRO..."
+                    placeholder="Tìm kiếm SO, RPRO, Khách hàng..."
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white border-2 border-blue-100 text-blue-900 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 transition-all shadow-sm"

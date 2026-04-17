@@ -30,6 +30,7 @@ export default function PlasticBins() {
   // Data states
   const [customers, setCustomers] = useState<PlasticBinCustomer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'WRONG'>('ALL');
 
   // Scan/Process states
   const [scannedReturns, setScannedReturns] = useState<any[]>([]);
@@ -73,6 +74,17 @@ export default function PlasticBins() {
     }
   }
 
+  const filteredScanned = scannedReturns.filter(item => {
+    if (statusFilter === 'OK') return item.customer_name !== 'Chưa xác định';
+    if (statusFilter === 'WRONG') return item.customer_name === 'Chưa xác định';
+    return true;
+  });
+
+  const filteredRecent = recentReturns.filter(item => {
+    if (statusFilter === 'OK') return item.customer_name !== 'Chưa xác định';
+    if (statusFilter === 'WRONG') return item.customer_name === 'Chưa xác định';
+    return true;
+  });
   async function fetchCustomers() {
     try {
       const { data, error } = await supabase
@@ -413,31 +425,44 @@ export default function PlasticBins() {
                 <h2 className="text-lg font-bold text-white">
                   Danh sách trả thùng ({scannedReturns.length + recentReturns.length})
                 </h2>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white/90">
-                    <div className="w-3 h-3 rounded-full bg-blue-400 border border-white/20"></div>
-                    <span>Chờ nhập: {scannedReturns.length}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-white/90">
-                    <div className="w-3 h-3 rounded-full bg-emerald-400 border border-white/20"></div>
-                    <span>Đã lưu: {recentReturns.length}</span>
-                  </div>
-                  <button 
-                    onClick={handleDownloadReturns}
-                    className="p-2 text-white/70 hover:text-white transition-colors ml-2"
-                    title="Tải xuống dữ liệu đã lưu"
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={statusFilter}
+                    onChange={(e: any) => setStatusFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-xs font-bold text-white focus:bg-white/20 outline-none cursor-pointer min-w-[100px]"
                   >
-                    <Download className="w-5 h-5" />
-                  </button>
-                  {!isViewer && scannedReturns.length > 0 && (
+                    <option value="ALL" className="text-slate-900">TẤT CẢ STATUS</option>
+                    <option value="OK" className="text-emerald-600 font-bold">OK</option>
+                    <option value="WRONG" className="text-rose-600 font-bold">WRONG</option>
+                  </select>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-white/90">
+                      <div className="w-3 h-3 rounded-full bg-blue-400 border border-white/20"></div>
+                      <span>Chờ nhập: {scannedReturns.length}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-white/90">
+                      <div className="w-3 h-3 rounded-full bg-emerald-400 border border-white/20"></div>
+                      <span>Đã lưu: {recentReturns.length}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
                     <button 
-                      onClick={() => setScannedReturns([])}
-                      className="p-2 text-white/70 hover:text-white transition-colors ml-2"
-                      title="Xóa danh sách chờ"
+                      onClick={handleDownloadReturns}
+                      className="p-2 text-white/70 hover:text-white transition-colors"
+                      title="Tải xuống dữ liệu đã lưu"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Download className="w-5 h-5" />
                     </button>
-                  )}
+                    {!isViewer && scannedReturns.length > 0 && (
+                      <button 
+                        onClick={() => setScannedReturns([])}
+                        className="p-2 text-white/70 hover:text-white transition-colors"
+                        title="Xóa danh sách chờ"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               
@@ -461,7 +486,7 @@ export default function PlasticBins() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {/* Hiển thị danh sách chờ nhập trước */}
-                      {scannedReturns.map((item) => (
+                      {filteredScanned.map((item) => (
                         <tr key={item.id} className="hover:bg-blue-50/30 transition-colors bg-blue-50/10">
                           <td className="px-6 py-4 text-sm font-bold text-slate-500">
                             {new Date(item.return_date).toLocaleDateString('vi-VN')}
@@ -509,7 +534,7 @@ export default function PlasticBins() {
                       ))}
                       
                       {/* Hiển thị danh sách đã lưu */}
-                      {recentReturns.map((item) => (
+                      {filteredRecent.map((item) => (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors opacity-80">
                           <td className="px-6 py-4 text-sm text-slate-400">
                             {new Date(item.return_date).toLocaleDateString('vi-VN')}

@@ -44,6 +44,8 @@ export default function Inbound() {
   const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [locationInput, setLocationInput] = useState('');
   const [manualQR, setManualQR] = useState('');
+  const [scannedSearch, setScannedSearch] = useState('');
+  const [scannedStatusFilter, setScannedStatusFilter] = useState<'all' | 'ok' | 'wrong'>('all');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -838,6 +840,25 @@ export default function Inbound() {
                 <div className="p-6 border-b border-emerald-100 flex items-center justify-between bg-emerald-600 shadow-md">
                   <h2 className="text-lg font-bold text-white">Danh sách chờ nhập ({scannedItems.length})</h2>
                   <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50" />
+                      <input
+                        type="text"
+                        placeholder="Tìm kiếm..."
+                        value={scannedSearch}
+                        onChange={(e) => setScannedSearch(e.target.value)}
+                        className="pl-8 pr-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-xs text-white placeholder:text-white/50 focus:bg-white/20 outline-none w-32 md:w-48 transition-all"
+                      />
+                    </div>
+                    <select
+                      value={scannedStatusFilter}
+                      onChange={(e: any) => setScannedStatusFilter(e.target.value)}
+                      className="px-2 py-1.5 bg-white/10 border border-white/20 rounded-lg text-xs font-bold text-white focus:bg-white/20 outline-none cursor-pointer appearance-none min-w-[80px]"
+                    >
+                      <option value="all" className="text-slate-900">TẤT CẢ STATUS</option>
+                      <option value="ok" className="text-emerald-600 font-bold">OK</option>
+                      <option value="wrong" className="text-rose-600 font-bold">WRONG</option>
+                    </select>
                     {isAdmin && selectedScanned.size > 0 && (
                       <button
                         onClick={deleteSelectedScanned}

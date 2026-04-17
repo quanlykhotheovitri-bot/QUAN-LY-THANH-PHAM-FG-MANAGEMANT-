@@ -80,8 +80,11 @@ export default function Outbound() {
 
   // Search states
   const [scannedSearch, setScannedSearch] = useState('');
+  const [scannedStatusFilter, setScannedStatusFilter] = useState<'ALL' | 'OK' | 'Wrong'>('ALL');
   const [plSearch, setPlSearch] = useState('');
+  const [plStatusFilter, setPlStatusFilter] = useState<'ALL' | 'OK' | 'THIEU' | 'DU'>('ALL');
   const [outboundSearch, setOutboundSearch] = useState('');
+  const [outboundStatusFilter, setOutboundStatusFilter] = useState<'ALL' | 'OK' | 'Wrong' | 'THIEU' | 'DU'>('ALL');
 
   useEffect(() => {
     setOutboundPage(1);
@@ -134,22 +137,24 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    if (!scannedSearch.trim()) return enrichedScannedItems;
-    const searchLower = scannedSearch.toLowerCase().trim();
-    return enrichedScannedItems.filter(item => 
-      (item.so?.toLowerCase().includes(searchLower)) || 
-      (item.rpro?.toLowerCase().includes(searchLower))
-    );
-  }, [enrichedScannedItems, scannedSearch]);
-
-  const filteredPlItems = useMemo(() => {
-    if (!plSearch.trim()) return plItems;
-    const searchLower = plSearch.toLowerCase().trim();
-    return plItems.filter(item => 
-      (item.so?.toLowerCase().includes(searchLower)) || 
-      (item.rpro?.toLowerCase().includes(searchLower))
-    );
-  }, [plItems, plSearch]);
+    let result = enrichedScannedItems;
+    
+    // Search filter
+    if (scannedSearch.trim()) {
+      const searchLower = scannedSearch.toLowerCase().trim();
+      result = result.filter(item => 
+        (item.so?.toLowerCase().includes(searchLower)) || 
+        (item.rpro?.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    // Status filter
+    if (scannedStatusFilter !== 'ALL') {
+      result = result.filter(item => item.status === scannedStatusFilter);
+    }
+    
+    return result;
+  }, [enrichedScannedItems, scannedSearch, scannedStatusFilter]);
 
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
@@ -206,7 +211,54 @@ export default function Outbound() {
     return { rproCounts, soCounts, rproInv, soInv, compositeInv };
   }, [scannedItems, inventoryBalances]);
 
-  const filteredOutbound = outboundData;
+  const filteredPlItems = useMemo(() => {
+    let result = plItems;
+    
+    // Search filter
+    if (plSearch.trim()) {
+      const searchLower = plSearch.toLowerCase().trim();
+      result = result.filter(item => 
+        (item.so?.toLowerCase().includes(searchLower)) || 
+        (item.rpro?.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Since status for PL items is calculated in render/map right now in the original code,
+    // we should ideally move that logic or duplicate parts of it for filtering.
+    if (plStatusFilter !== 'ALL') {
+      result = result.filter(item => {
+        const cleanedSo = cleanId(item.so);
+        const cleanedRpro = cleanId(item.rpro);
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
+        const diff = item.totalBoxes - scanCount;
+        
+        if (plStatusFilter === 'OK') return diff === 0;
+        if (plStatusFilter === 'THIEU') return diff > 0;
+        if (plStatusFilter === 'DU') return diff < 0;
+        return true;
+      });
+    }
+    
+    return result;
+  }, [plItems, plSearch, plStatusFilter, plItemStats]);
+
+  const filteredOutbound = useMemo(() => {
+    let result = outboundData;
+    
+    // Status Filter for History
+    if (outboundStatusFilter !== 'ALL') {
+      result = result.filter(item => {
+        const itemStatus = item.status?.toUpperCase();
+        if (outboundStatusFilter === 'OK') return itemStatus === 'OK' || itemStatus === 'ĐỦ';
+        if (outboundStatusFilter === 'Wrong') return itemStatus === 'WRONG' || itemStatus === 'SAI';
+        if (outboundStatusFilter === 'THIEU') return itemStatus?.includes('THIẾU');
+        if (outboundStatusFilter === 'DU') return itemStatus?.includes('DƯ');
+        return true;
+      });
+    }
+
+    return result;
+  }, [outboundData, outboundStatusFilter]);
 
   async function fetchCurrentScannedItems() {
     try {
@@ -1465,17 +1517,30 @@ export default function Outbound() {
             <div className="xl:col-span-3">
               <div className="bg-white rounded-2xl border-2 border-blue-500 shadow-lg overflow-hidden">
                 <div className="p-4 md:p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
-                  <h2 className="text-lg font-bold text-white">Danh sách chờ xuất ({enrichedScannedItems.length})</h2>
+                  <h2 className="text-lg font-bold text-white uppercase tracking-tight">
+                    Scan Xuất {scannedStatusFilter !== 'ALL' || scannedSearch ? `(${filteredScannedItems.length}/${enrichedScannedItems.length})` : `(${enrichedScannedItems.length})`}
+                  </h2>
                   
-                  <div className="flex-1 max-w-md relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Tìm kiếm SO, RPRO..."
-                      value={scannedSearch}
-                      onChange={(e) => setScannedSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all"
-                    />
+                  <div className="flex-1 max-w-md relative flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Tìm kiếm SO, RPRO..."
+                        value={scannedSearch}
+                        onChange={(e) => setScannedSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all"
+                      />
+                    </div>
+                    <select
+                      value={scannedStatusFilter}
+                      onChange={(e: any) => setScannedStatusFilter(e.target.value)}
+                      className="px-3 py-3 bg-white/10 border border-white/20 rounded-xl text-sm text-white focus:bg-white/20 focus:ring-2 focus:ring-white/30 outline-none transition-all appearance-none cursor-pointer min-w-[100px]"
+                    >
+                      <option value="ALL" className="text-slate-900">TẤT CẢ STATUS</option>
+                      <option value="OK" className="text-emerald-600 font-bold">OK</option>
+                      <option value="Wrong" className="text-rose-600 font-bold">WRONG</option>
+                    </select>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -1773,20 +1838,34 @@ export default function Outbound() {
                       <FileText className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-slate-900">Danh sách PL hiện tại</h2>
+                      <h2 className="text-lg font-bold text-slate-900">
+                        Danh sách PL hiện tại {plStatusFilter !== 'ALL' || plSearch ? `(${filteredPlItems.length}/${plItems.length})` : `(${plItems.length})`}
+                      </h2>
                       <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Current Packing List Data</p>
                     </div>
                   </div>
 
-                  <div className="flex-1 max-w-md relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Tìm kiếm theo SO, RPRO trong PL..."
-                      value={plSearch}
-                      onChange={(e) => setPlSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    />
+                  <div className="flex-1 max-w-md relative flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Tìm kiếm theo SO, RPRO trong PL..."
+                        value={plSearch}
+                        onChange={(e) => setPlSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      />
+                    </div>
+                    <select
+                      value={plStatusFilter}
+                      onChange={(e: any) => setPlStatusFilter(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all cursor-pointer min-w-[100px]"
+                    >
+                      <option value="ALL">TẤT CẢ</option>
+                      <option value="OK" className="text-emerald-600">ĐỦ (OK)</option>
+                      <option value="THIEU" className="text-rose-600">THIẾU</option>
+                      <option value="DU" className="text-amber-600">DƯ</option>
+                    </select>
                   </div>
 
                   {plItems.length > 0 && (
@@ -1993,7 +2072,28 @@ export default function Outbound() {
                 2. Danh sách PL
               </button>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm theo SO, RPRO, QR..."
+                  value={outboundSearch}
+                  onChange={(e) => setOutboundSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+              <select
+                value={outboundStatusFilter}
+                onChange={(e: any) => setOutboundStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all cursor-pointer min-w-[100px]"
+              >
+                <option value="ALL">TẤT CẢ STATUS</option>
+                <option value="OK">OK / ĐỦ</option>
+                <option value="Wrong">WRONG</option>
+                <option value="THIEU">THIẾU</option>
+                <option value="DU">DƯ</option>
+              </select>
               {isAdmin && selectedOutbound.size > 0 && (
                 <button
                   onClick={deleteSelectedOutbound}

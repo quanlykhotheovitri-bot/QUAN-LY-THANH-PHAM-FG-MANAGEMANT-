@@ -1078,11 +1078,13 @@ export default function Inbound() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SO</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KH</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1099,8 +1101,9 @@ export default function Inbound() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase font-bold text-blue-600">{item.kh || '-'}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-medium text-slate-600">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 

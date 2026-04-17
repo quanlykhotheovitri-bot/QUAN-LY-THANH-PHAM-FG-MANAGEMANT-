@@ -668,10 +668,11 @@ export default function Inventory() {
                   )}
                 </th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">Mã QR</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">RPRO</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">KHÁCH HÀNG</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">LOẠI THÙNG</th>
-                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SỐ THÙNG ĐƠN HÀNG</th>
+                <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">SỐ THÙNG</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">VỊ TRÍ</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">NGÀY NHẬP</th>
                 <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap bg-[#002060]">THAO TÁC</th>
@@ -706,9 +707,9 @@ export default function Inventory() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-mono">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700">{item.rpro}</td>
-                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.kh}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.so}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold text-blue-700 uppercase">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border border-slate-200 text-center uppercase">{item.kh}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.box_type}</td>
                       <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">
                         {item.total_boxes > 0 ? `1 / ${item.total_boxes}` : '1'}
@@ -738,7 +739,7 @@ export default function Inventory() {
               <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-300">
                 <tr>
                   <td className="px-2 py-3 border border-slate-300 text-center"></td>
-                  <td colSpan={4} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
+                  <td colSpan={5} className="px-4 py-3 text-right text-[11px] border border-slate-300 uppercase tracking-wider">Tổng cộng:</td>
                   <td className="px-4 py-3 text-[11px] border border-slate-300 text-center text-blue-700">
                     {totalBoxes.toLocaleString()}
                   </td>

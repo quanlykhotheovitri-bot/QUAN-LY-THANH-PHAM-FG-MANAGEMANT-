@@ -110,22 +110,6 @@ export default function Transfer() {
 
   const matchedLocation = locations.find(l => l.full_path.trim().toLowerCase() === locationInput.trim().toLowerCase());
 
-  useEffect(() => {
-    if (scannedItems.length > 0) {
-      // Optimized update for target location
-      const newToLocation = matchedLocation?.full_path || locationInput;
-      setScannedItems(prev => {
-        // Only update if something changed to avoid infinite loop or unnecessary re-renders
-        const needsUpdate = prev.some(item => item.toLocation !== newToLocation);
-        if (!needsUpdate) return prev;
-        return prev.map(item => ({
-          ...item,
-          toLocation: newToLocation
-        }));
-      });
-    }
-  }, [locationInput, matchedLocation]);
-
   const handleScan = async (qrData: string) => {
     const trimmedQR = qrData.trim();
     const matchedLoc = locations.find(l => l.full_path.trim().toLowerCase() === trimmedQR.toLowerCase());
@@ -540,16 +524,6 @@ export default function Transfer() {
                 <div className="p-6 border-b border-blue-100 bg-blue-600 shadow-md">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <h2 className="text-lg font-bold text-white">Danh sách chờ chuyển ({scannedItems.length})</h2>
-                    <div className="flex-1 md:max-w-xs relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
-                      <input
-                        type="text"
-                        placeholder="Tìm SO, RPRO, KH..."
-                        value={scannedSearch}
-                        onChange={(e) => setScannedSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder:text-white/50 focus:bg-white/20 outline-none transition-all"
-                      />
-                    </div>
                   </div>
                   <div className="flex items-center gap-2 mt-4">
                     <button
@@ -623,17 +597,7 @@ export default function Transfer() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {scannedItems
-                          .filter(item => {
-                            if (!scannedSearch) return true;
-                            const s = scannedSearch.toLowerCase();
-                            return (item.qrCode?.toLowerCase().includes(s) || 
-                                   item.so?.toLowerCase().includes(s) || 
-                                   item.rpro?.toLowerCase().includes(s) || 
-                                   item.kh?.toLowerCase().includes(s));
-                          })
-                          .slice(0, 100) // Limit display for performance
-                          .map((item, index) => (
+                        {scannedItems.map((item, index) => (
                           <tr 
                             key={item.qrCode} 
                             className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.qrCode) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-rose-50' : ''}`}
@@ -679,14 +643,6 @@ export default function Transfer() {
                     </table>
                   )}
                 </div>
-
-                {scannedItems.length > 100 && (
-                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-center">
-                    <p className="text-xs text-slate-500 italic">
-                      Đang hiển thị 100/{scannedItems.length} kiện hàng. Xác nhận chuyển để xử lý toàn bộ.
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           </div>

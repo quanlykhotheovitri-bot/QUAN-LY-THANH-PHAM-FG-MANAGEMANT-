@@ -1034,28 +1034,65 @@ export default function Outbound() {
     if (enrichedScannedItems.length === 0) return;
     setLoading(true);
     try {
-      const payload = {
-        device_info: navigator.userAgent,
-        items: enrichedScannedItems.map(item => ({
-          qrCode: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
-          plNo: item.plNo,
-          outQty: item.outQty,
-          locationPath: item.locationPath,
-          status: item.status,
-          note: item.note,
-          inventoryId: item.inventory_id,
-          isSaved: item.isSaved
-        }))
-      };
+      const chunkSize = 500;
+      for (let i = 0; i < enrichedScannedItems.length; i += chunkSize) {
+        const chunk = enrichedScannedItems.slice(i, i + chunkSize);
+        
+        // 1. Outbound Transactions (only for UN-SAVED items)
+        const unsavedItems = chunk.filter(item => !item.isSaved);
+        if (unsavedItems.length > 0) {
+          const { error: txError } = await supabase.from('outbound_transactions').insert(
+            unsavedItems.map(item => ({
+              type: 'SCAN',
+              qr_code: item.qrCode,
+              so: item.so,
+              rpro: item.rpro,
+              kh: item.kh,
+              pl_no: item.plNo,
+              quantity: item.outQty,
+              location_path: item.locationPath,
+              status: item.status === 'OK' ? 'completed' : 'warning',
+              note: item.note,
+              device_info: navigator.userAgent
+            }))
+          );
+          if (txError) throw txError;
+        }
 
-      const { error } = await supabase.rpc('process_outbound_v1', { p_data: payload });
+        // 2. Update Inventory (subtract quantity)
+        // Note: For speed, we do this sequentially or Promise.all if count is small. 
+        // Small chunks (500) mean we should probably update sequentially if stability is a concern, 
+        // but user wanted speed, and direct update is what they had.
+        await Promise.all(chunk.map(async (item) => {
+          if (item.inventory_id) {
+            const { error: invError } = await supabase
+              .from('inventory_balances')
+              .update({ 
+                quantity: (item.inventory?.quantity || 0) - item.outQty,
+                last_updated: new Date().toISOString()
+              })
+              .eq('id', item.inventory_id);
+            if (invError) console.error('Error updating inventory:', item.qrCode, invError);
+          }
+        }));
 
-      if (error) throw error;
+        // 3. Movement logs
+        const { error: movError } = await supabase.from('inventory_movements').insert(
+          chunk.map(item => ({
+            type: 'OUTBOUND',
+            qr_code: item.qrCode,
+            so: item.so,
+            rpro: item.rpro,
+            kh: item.kh,
+            from_location: item.locationPath,
+            quantity: item.outQty,
+            remark: 'Xuất kho (Manual Confirm)'
+          }))
+        );
+        if (movError) throw movError;
+      }
 
-      // Clear current scanned items from database
+      // Clear current scanned items
       await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
       setMessage({ type: 'success', text: `Đã xuất kho thành công ${scannedItems.length} kiện hàng.` });

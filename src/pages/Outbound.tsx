@@ -71,6 +71,7 @@ export default function Outbound() {
 
   // PL state
   const [plItems, setPlItems] = useState<any[]>([]);
+  const [selectedPlItems, setSelectedPlItems] = useState<Set<string>>(new Set());
   const [plNumbers, setPlNumbers] = useState<string[]>([]);
   const [sourceFiles, setSourceFiles] = useState<Array<{ name: string, status: 'pending' | 'success' | 'error', data: any[], error?: string }>>([]);
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
@@ -935,6 +936,46 @@ export default function Outbound() {
     }
   };
 
+  const toggleSelectPlItem = (id: string) => {
+    const newSelected = new Set(selectedPlItems);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedPlItems(newSelected);
+  };
+
+  const toggleSelectAllPlItems = () => {
+    if (selectedPlItems.size === filteredPlItems.length) {
+      setSelectedPlItems(new Set());
+    } else {
+      setSelectedPlItems(new Set(filteredPlItems.map(item => item.id)));
+    }
+  };
+
+  const handleDeleteSelectedPlItems = async () => {
+    if (selectedPlItems.size === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedPlItems.size} mục PL đã chọn?`)) return;
+
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('current_pl_items')
+        .delete()
+        .in('id', Array.from(selectedPlItems));
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `Đã xóa ${selectedPlItems.size} mục PL thành công.` });
+      setSelectedPlItems(new Set());
+      await fetchCurrentPLItems();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa các mục PL: ' + error.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
   const deleteSelectedOutbound = async () => {
     if (selectedOutbound.size === 0) return;
     const { error } = await supabase
@@ -1160,6 +1201,11 @@ export default function Outbound() {
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi xóa PL: ' + error.message });
     } else {
+      setSelectedPlItems(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       await fetchCurrentPLItems();
     }
   };
@@ -1923,9 +1969,20 @@ export default function Outbound() {
                         <Save className="w-3 h-3" />
                         LƯU DATA XUẤT
                       </button>
+                      {isAdmin && selectedPlItems.size > 0 && (
+                        <button 
+                          onClick={handleDeleteSelectedPlItems}
+                          disabled={loading}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-bold hover:bg-rose-700 transition-all disabled:opacity-50 animate-in fade-in zoom-in"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          XÓA ĐÃ CHỌN ({selectedPlItems.size})
+                        </button>
+                      )}
                       {isAdmin && (
                         <button 
                           onClick={async () => { 
+                            if (!window.confirm('Bạn có chắc chắn muốn xóa TOÀN BỘ danh sách PL hiện tại?')) return;
                             const { error } = await supabase.from('current_pl_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
                             if (error) {
                               setMessage({ type: 'error', text: 'Lỗi khi xóa tất cả PL: ' + error.message });
@@ -1933,6 +1990,7 @@ export default function Outbound() {
                               setPlItems([]); 
                               setPlNumbers([]); 
                               setPlNoInput(''); 
+                              setSelectedPlItems(new Set());
                               setMessage({ type: 'success', text: 'Đã xóa toàn bộ danh sách PL hiện tại.' });
                             }
                           }}
@@ -1958,6 +2016,14 @@ export default function Outbound() {
                     <table className="w-full text-left border-collapse border border-slate-200">
                       <thead>
                         <tr className="bg-[#002060] text-white">
+                          <th className="px-2 py-3 border border-slate-300 text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedPlItems.size === filteredPlItems.length && filteredPlItems.length > 0}
+                              onChange={toggleSelectAllPlItems}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </th>
                           <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">OVN Order No</th>
                           <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">RPRO</th>
                           <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">KHÁCH HÀNG</th>
@@ -1972,7 +2038,7 @@ export default function Outbound() {
                       <tbody className="divide-y divide-slate-100">
                         {filteredPlItems.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="px-6 py-12 text-center">
+                            <td colSpan={10} className="px-6 py-12 text-center">
                               <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                               <p className="text-slate-400 italic text-sm">Không tìm thấy dữ liệu phù hợp</p>
                             </td>
@@ -2002,7 +2068,15 @@ export default function Outbound() {
                           const location = invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A';
 
                           return (
-                            <tr key={index} className="hover:bg-slate-50 transition-colors">
+                            <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedPlItems.has(item.id) ? 'bg-blue-50/50' : ''}`}>
+                              <td className="px-2 py-4 border border-slate-200 text-center">
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedPlItems.has(item.id)}
+                                  onChange={() => toggleSelectPlItem(item.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
                               <td className="px-4 py-4 border border-slate-200 text-sm text-center">{item.so}</td>
                               <td className="px-4 py-4 border border-slate-200 text-sm text-center font-bold text-orange-600">{item.rpro}</td>
                               <td className="px-4 py-4 border border-slate-200 text-xs text-center">{item.kh}</td>
@@ -2037,7 +2111,7 @@ export default function Outbound() {
                       {plItems.length > 0 && (
                         <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
                           <tr>
-                            <td colSpan={4} className="px-4 py-4 border border-slate-200 text-right text-sm uppercase tracking-wider">Tổng cộng:</td>
+                            <td colSpan={5} className="px-4 py-4 border border-slate-200 text-right text-sm uppercase tracking-wider">Tổng cộng:</td>
                             <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
                               {plItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
                             </td>

@@ -623,9 +623,9 @@ export default function Outbound() {
         }
 
         if (tableHeaderRow !== -1) {
-          // 1. Find PL No by scanning rows 4, 5, 6 (indices 3, 4, 5)
+          // 1. Find PL No by scanning top rows (indices 2 to 7)
           let plNo = '';
-          for (let r = 3; r <= 5; r++) {
+          for (let r = 2; r <= 7; r++) {
             const row = rows[r] || [];
             for (const cell of row) {
               const cellStr = String(cell || '').trim();
@@ -640,17 +640,23 @@ export default function Outbound() {
             if (plNo) break;
           }
 
-          // 2. Find Customer info (Old way: 3 rows above table header)
+          // 2. Find Customer info by scanning top rows (indices 2 to 7)
           let customer = '';
-          const infoRowIdx = tableHeaderRow - 3;
-          if (infoRowIdx >= 0) {
-            const infoRow = rows[infoRowIdx] || [];
-            const infoRowString = infoRow.map(c => String(c || '').trim()).join(' ');
-            if (infoRowString.toLowerCase().includes('customer:')) {
-              const parts = infoRowString.split(/customer:/i);
+          for (let r = 2; r <= 7; r++) {
+            const row = rows[r] || [];
+            const rowString = row.map(c => String(c || '').trim()).join(' ');
+            if (rowString.toLowerCase().includes('customer:')) {
+              const parts = rowString.split(/customer:/i);
               if (parts[1]) {
-                customer = parts[1].split(/erp/i)[0].split(/delivery/i)[0].trim();
+                // Remove trailing labels that might be in the same row
+                customer = parts[1]
+                  .split(/erp/i)[0]
+                  .split(/delivery/i)[0]
+                  .split(/date/i)[0]
+                  .split(/address/i)[0]
+                  .trim();
                 if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+                if (customer) break;
               }
             }
           }
@@ -747,9 +753,9 @@ export default function Outbound() {
                   }
 
                   if (tableHeaderRow !== -1) {
-                    // 1. Find PL No by scanning rows 4, 5, 6 (indices 3, 4, 5)
+                    // 1. Find PL No by scanning top rows (indices 2 to 7)
                     let plNo = '';
-                    for (let r = 3; r <= 5; r++) {
+                    for (let r = 2; r <= 7; r++) {
                       const row = rows[r] || [];
                       for (const cell of row) {
                         const cellStr = String(cell || '').trim();
@@ -764,17 +770,22 @@ export default function Outbound() {
                       if (plNo) break;
                     }
 
-                    // 2. Find Customer info (Old way: 3 rows above table header)
+                    // 2. Find Customer info by scanning top rows (indices 2 to 7)
                     let customer = '';
-                    const infoRowIdx = tableHeaderRow - 3;
-                    if (infoRowIdx >= 0) {
-                      const infoRow = rows[infoRowIdx] || [];
-                      const infoRowString = infoRow.map(c => String(c || '').trim()).join(' ');
-                      if (infoRowString.toLowerCase().includes('customer:')) {
-                        const parts = infoRowString.split(/customer:/i);
+                    for (let r = 2; r <= 7; r++) {
+                      const row = rows[r] || [];
+                      const rowString = row.map(c => String(c || '').trim()).join(' ');
+                      if (rowString.toLowerCase().includes('customer:')) {
+                        const parts = rowString.split(/customer:/i);
                         if (parts[1]) {
-                          customer = parts[1].split(/erp/i)[0].split(/delivery/i)[0].trim();
+                          customer = parts[1]
+                            .split(/erp/i)[0]
+                            .split(/delivery/i)[0]
+                            .split(/date/i)[0]
+                            .split(/address/i)[0]
+                            .trim();
                           if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+                          if (customer) break;
                         }
                       }
                     }

@@ -1,4 +1,4 @@
-import { useState, useEffect, ChangeEvent } from 'react';
+import { useState, useEffect, ChangeEvent, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
@@ -55,10 +55,28 @@ export default function Inbound() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [orderStatusMap, setOrderStatusMap] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
   const [historySearch, setHistorySearch] = useState('');
   const historyPageSize = 50;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore || historyLoading || activeTab !== 'history') return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        fetchHistory();
+      }
+    }, { threshold: 0.1 });
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, historyLoading, activeTab, historyData.length]);
 
   useEffect(() => {
     fetchLocations();
@@ -67,15 +85,11 @@ export default function Inbound() {
   useEffect(() => {
     if (activeTab === 'history') {
       const timer = setTimeout(() => {
-        if (historyPage === 1) {
-          fetchHistory();
-        } else {
-          setHistoryPage(1);
-        }
+        fetchHistory(true);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, historyPage, historySearch]);
+  }, [activeTab, historySearch, statusFilter]);
 
   const filteredHistory = historyData.filter(item => {
     const status = orderStatusMap[`${item.so}|${item.rpro}`] || '';
@@ -101,7 +115,8 @@ export default function Inbound() {
   });
 
   const exportHistory = (format: 'xlsx' | 'csv') => {
-    const data = filteredHistory.map(item => ({
+    const dataToExport = filteredHistory;
+    const data = dataToExport.map(item => ({
       'QRCODE': item.qr_code,
       'DATE': formatDate(item.created_at),
       'OVN Order No': item.so,
@@ -117,6 +132,113 @@ export default function Inbound() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'InboundHistory');
     XLSX.writeFile(wb, `InboundHistory_${new Date().toISOString().split('T')[0]}.${format}`);
+  };
+
+  const exportAllHistory = async (format: 'xlsx' | 'csv') => {
+    setIsLoading(true);
+    try {
+      let allData: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let finished = false;
+
+      while (!finished) {
+        let query = supabase
+          .from('inbound_transactions')
+          .select('*');
+
+        if (historySearch.trim()) {
+          const search = historySearch.trim();
+          query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+        }
+
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          finished = true;
+        } else {
+          allData = [...allData, ...data];
+          if (data.length < pageSize) finished = true;
+          page++;
+        }
+      }
+
+      // Fetch statuses for ALL unique SO/RPRO to make report accurate
+      const uniqueItems = Array.from(new Set(allData.map(item => `${item.so}|${item.rpro}`)));
+      const fullStatusMap: Record<string, string> = {};
+
+      // Process in chunks to avoid large query strings
+      const chunkSize = 100;
+      for (let i = 0; i < uniqueItems.length; i += chunkSize) {
+        const chunk = uniqueItems.slice(i, i + chunkSize);
+        const { data: allRelated } = await supabase
+          .from('inbound_transactions')
+          .select('qr_code, so, rpro')
+          .or(chunk.map(key => {
+            const [so, rpro] = key.split('|');
+            return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+          }).join(','));
+
+        chunk.forEach(key => {
+          const [so, rpro] = key.split('|');
+          const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
+          const itemExample = allData.find(d => d.so === so && d.rpro === rpro);
+          const total = itemExample?.total_boxes || 0;
+          
+          if (total <= 0) {
+            fullStatusMap[key] = 'Đủ đơn';
+          } else {
+            const presentBoxes = new Set<number>();
+            relatedBoxes.forEach(b => {
+              const parsed = parseQRCode(b.qr_code);
+              presentBoxes.add(parsed.quantity);
+            });
+            const missing = [];
+            for (let j = 1; j <= total; j++) {
+              if (!presentBoxes.has(j)) missing.push(j);
+            }
+            fullStatusMap[key] = missing.length === 0 ? 'Đủ đơn' : `Thiếu thùng số ${missing.join(', ')}`;
+          }
+        });
+      }
+
+      // Result of filtering on client-side status if needed? 
+      // The user wants "all history" usually matching current filters.
+      let finalData = allData;
+      if (statusFilter !== 'all') {
+        finalData = allData.filter(item => {
+          const status = fullStatusMap[`${item.so}|${item.rpro}`] || '';
+          if (statusFilter === 'complete') return status === 'Đủ đơn';
+          if (statusFilter === 'incomplete') return status && status.startsWith('Thiếu');
+          return true;
+        });
+      }
+
+      const data = finalData.map(item => ({
+        'QRCODE': item.qr_code,
+        'DATE': formatDate(item.created_at),
+        'OVN Order No': item.so,
+        'RPRO': item.rpro,
+        'TÌNH TRẠNG': fullStatusMap[`${item.so}|${item.rpro}`] || '',
+        'LOẠI THÙNG': item.box_type,
+        'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
+        'VỊ TRÍ': item.location_path,
+        'NGƯỜI NHẬP': item.user_email
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'InboundHistory_Full');
+      XLSX.writeFile(wb, `InboundHistory_Full_${new Date().toISOString().split('T')[0]}.${format}`);
+      setMessage({ type: 'success', text: 'Tải xuống hoàn thành.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi xuất dữ liệu: ' + err.message });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getStatus = (item: any) => {
@@ -146,10 +268,18 @@ export default function Inbound() {
     return true;
   });
 
-  async function fetchHistory() {
+  async function fetchHistory(isNew = false) {
+    if (historyLoading) return;
     setHistoryLoading(true);
     setIsLoading(true);
-    const from = (historyPage - 1) * historyPageSize;
+    
+    if (isNew) {
+      setHistoryPage(1);
+      setHasMore(true);
+    }
+
+    const currentPage = isNew ? 1 : historyPage;
+    const from = (currentPage - 1) * historyPageSize;
     const to = from + historyPageSize - 1;
 
     let query = supabase
@@ -168,10 +298,14 @@ export default function Inbound() {
     if (error) {
       setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
     } else if (data) {
+      if (data.length < historyPageSize) {
+        setHasMore(false);
+      }
+
       // Calculate status for each SO/RPRO
       const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
       
-      const statusMap: Record<string, string> = {};
+      const statusMap: Record<string, string> = { ...orderStatusMap };
 
       if (uniqueSORPRO.length > 0) {
         // Fetch all boxes for these SO/RPROs to check completeness
@@ -216,13 +350,21 @@ export default function Inbound() {
       }
 
       setOrderStatusMap(statusMap);
-      setHistoryData(data.map(item => ({
+      const formattedData = data.map(item => ({
         ...item,
         so: item.so?.trim() || '',
         rpro: item.rpro?.trim() || '',
         qr_code: item.qr_code?.trim() || ''
-      })));
+      }));
+
+      if (isNew) {
+        setHistoryData(formattedData);
+      } else {
+        setHistoryData(prev => [...prev, ...formattedData]);
+      }
+      
       if (count !== null) setHistoryTotal(count);
+      setHistoryPage(currentPage + 1);
     }
     setHistoryLoading(false);
     setIsLoading(false);
@@ -1067,21 +1209,21 @@ export default function Inbound() {
             </div>
             <div className="flex items-center justify-center gap-2">
               <button 
-                onClick={() => exportHistory('xlsx')}
+                onClick={() => exportAllHistory('xlsx')}
                 className="flex-1 sm:flex-none px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
               >
                 <Download className="w-3.5 h-3.5 text-blue-600" />
                 Excel
               </button>
               <button 
-                onClick={() => exportHistory('csv')}
+                onClick={() => exportAllHistory('csv')}
                 className="flex-1 sm:flex-none px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-slate-50 transition-all"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-600" />
                 CSV
               </button>
               <button 
-                onClick={() => fetchHistory()}
+                onClick={() => fetchHistory(true)}
                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
               >
                 <CheckCircle2 className="w-5 h-5" />
@@ -1251,30 +1393,21 @@ export default function Inbound() {
               ))
             )}
           </div>
-          {historyData.length > 0 && (
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
+          {filteredHistory.length > 0 && (
+            <div className="flex flex-col items-center justify-center px-6 py-4 bg-slate-50 border-t-2 border-slate-200 gap-2">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Hiển thị {Math.min(historyTotal, (historyPage - 1) * historyPageSize + 1)}-{Math.min(historyTotal, historyPage * historyPageSize)} trong {historyTotal}
+                Đang hiển thị {filteredHistory.length} / {historyTotal} bản ghi
               </div>
-              <div className="flex gap-2">
+              {hasMore && (
                 <button
-                  onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
-                  disabled={historyPage === 1}
-                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
+                  onClick={() => fetchHistory()}
+                  disabled={historyLoading}
+                  className="px-6 py-2 bg-[#002060] text-white rounded-xl text-xs font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all"
                 >
-                  TRƯỚC
+                  {historyLoading ? 'ĐANG TẢI...' : 'XEM THÊM'}
                 </button>
-                <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
-                  TRANG {historyPage} / {Math.ceil(historyTotal / historyPageSize) || 1}
-                </div>
-                <button
-                  onClick={() => setHistoryPage(prev => Math.min(Math.ceil(historyTotal / historyPageSize), prev + 1))}
-                  disabled={historyPage === Math.ceil(historyTotal / historyPageSize) || historyTotal === 0}
-                  className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-                >
-                  SAU
-                </button>
-              </div>
+              )}
+              <div ref={loadMoreRef} className="h-1" />
             </div>
           )}
         </div>

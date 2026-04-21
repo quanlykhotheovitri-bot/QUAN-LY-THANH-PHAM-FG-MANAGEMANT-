@@ -476,21 +476,35 @@ export default function Outbound() {
       const lines = manualQR.split('\n').filter(line => line.trim() !== '');
       const parsedItems = lines.map(line => parseQRCode(line.trim()));
       
-      // Bulk lookups for efficiency
       const qrCodes = parsedItems.map(p => p.qrCode);
-      const { data: inventories } = await supabase.from('inventory_balances').select('*').in('qr_code', qrCodes);
+
+      // 1. Chunked QR lookup
+      const inventories: any[] = [];
+      const qrChunkSize = 500;
+      for (let i = 0; i < qrCodes.length; i += qrChunkSize) {
+        const chunk = qrCodes.slice(i, i + qrChunkSize);
+        const { data } = await supabase.from('inventory_balances').select('*').in('qr_code', chunk);
+        if (data) inventories.push(...data);
+      }
       
       const sos = parsedItems.map(p => p.so).filter(Boolean);
       const rpros = parsedItems.map(p => p.rpro).filter(Boolean);
       
-      let sourceMatches: any[] = [];
-      if (sos.length > 0 || rpros.length > 0) {
-        let query = supabase.from('source_import_lines').select('*');
-        const filters = [];
-        if (sos.length > 0) filters.push(`so.in.(${sos.map(s => `"${s}"`).join(',')})`);
-        if (rpros.length > 0) filters.push(`rpro.in.(${rpros.map(r => `"${r}"`).join(',')})`);
-        const { data } = await query.or(filters.join(','));
-        if (data) sourceMatches = data;
+      const sourceMatches: any[] = [];
+      const filterChunkSize = 200; // Even smaller for complex or filters
+      
+      // 2. Chunked SO lookup
+      for (let i = 0; i < sos.length; i += filterChunkSize) {
+        const chunk = sos.slice(i, i + filterChunkSize);
+        const { data } = await supabase.from('source_import_lines').select('*').in('so', chunk);
+        if (data) sourceMatches.push(...data);
+      }
+      
+      // 3. Chunked RPRO lookup
+      for (let i = 0; i < rpros.length; i += filterChunkSize) {
+        const chunk = rpros.slice(i, i + filterChunkSize);
+        const { data } = await supabase.from('source_import_lines').select('*').in('rpro', chunk);
+        if (data) sourceMatches.push(...data);
       }
 
       const itemsToInsert = parsedItems.map(parsed => {

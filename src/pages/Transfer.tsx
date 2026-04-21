@@ -220,13 +220,20 @@ export default function Transfer() {
         return;
       }
 
-      // 2. Batch fetch from inventory
-      const { data: inventoryItems, error } = await supabase
-        .from('inventory_balances')
-        .select('*')
-        .in('qr_code', qrCodesToFetch);
-
-      if (error) throw error;
+      // 2. Batch fetch from inventory in chunks
+      const inventoryItems: any[] = [];
+      const fetchChunkSize = 500;
+      
+      for (let i = 0; i < qrCodesToFetch.length; i += fetchChunkSize) {
+        const chunk = qrCodesToFetch.slice(i, i + fetchChunkSize);
+        const { data, error } = await supabase
+          .from('inventory_balances')
+          .select('*')
+          .in('qr_code', chunk);
+        
+        if (error) throw error;
+        if (data) inventoryItems.push(...data);
+      }
 
       const inventoryMap = new Map(inventoryItems?.map(inv => [inv.qr_code, inv]) || []);
       

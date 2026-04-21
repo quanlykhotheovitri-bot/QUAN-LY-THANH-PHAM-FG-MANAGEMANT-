@@ -122,6 +122,8 @@ export default function Inbound() {
   const [orderStatusMap, setOrderStatusMap] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
   const [historySearch, setHistorySearch] = useState('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const historyPageSize = 20000;
   const fetchLockRef = useRef(false);
 
@@ -136,7 +138,7 @@ export default function Inbound() {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, historySearch, statusFilter]);
+  }, [activeTab, historySearch, statusFilter, startDate, endDate]);
 
   const filteredHistory = useMemo(() => {
     return historyData.filter(item => {
@@ -203,6 +205,13 @@ export default function Inbound() {
         if (historySearch.trim()) {
           const search = historySearch.trim();
           query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+        }
+
+        if (startDate) {
+          query = query.gte('created_at', `${startDate}T00:00:00`);
+        }
+        if (endDate) {
+          query = query.lte('created_at', `${endDate}T23:59:59`);
         }
 
         const { data, count, error } = await query
@@ -351,6 +360,13 @@ export default function Inbound() {
         query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
       }
 
+      if (startDate) {
+        query = query.gte('created_at', `${startDate}T00:00:00`);
+      }
+      if (endDate) {
+        query = query.lte('created_at', `${endDate}T23:59:59`);
+      }
+
       const { count } = await query;
       const totalCount = count || 0;
       setHistoryTotal(totalCount);
@@ -381,6 +397,13 @@ export default function Inbound() {
         if (historySearch.trim()) {
           const search = historySearch.trim();
           chunkQuery = chunkQuery.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+        }
+
+        if (startDate) {
+          chunkQuery = chunkQuery.gte('created_at', `${startDate}T00:00:00`);
+        }
+        if (endDate) {
+          chunkQuery = chunkQuery.lte('created_at', `${endDate}T23:59:59`);
         }
 
         fetchPromises.push(
@@ -1310,6 +1333,31 @@ export default function Inbound() {
             <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
               <h2 className="text-lg font-bold text-blue-900">Lịch sử nhập kho ({historyTotal.toLocaleString()} bản ghi)</h2>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex items-center gap-2 bg-white border-2 border-blue-100 rounded-lg px-3 py-1 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Từ</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="text-xs font-bold text-blue-900 outline-none"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase ml-2">Đến</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="text-xs font-bold text-blue-900 outline-none"
+                  />
+                  {(startDate || endDate) && (
+                    <button 
+                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      className="ml-2 p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
+                      title="Xóa lọc ngày"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}

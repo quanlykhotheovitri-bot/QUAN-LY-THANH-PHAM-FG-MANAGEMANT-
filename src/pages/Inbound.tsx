@@ -1,4 +1,4 @@
-import { useState, useEffect, ChangeEvent, useRef } from 'react';
+import { useState, useEffect, ChangeEvent, useRef, useMemo, memo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
@@ -26,6 +26,67 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, SourceImportLine } from '../types';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../lib/utils';
+
+// Memoized Row Component to prevent unnecessary re-renders of the large table
+const HistoryRow = memo(({ 
+  item, 
+  isAdmin, 
+  isSelected, 
+  status, 
+  onToggleSelect, 
+  onDelete 
+}: { 
+  item: any, 
+  isAdmin: boolean, 
+  isSelected: boolean, 
+  status: string,
+  onToggleSelect: (id: string) => void,
+  onDelete: (id: string) => void
+}) => {
+  return (
+    <tr className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 45px' }}>
+      <td className="px-2 py-3 border-b border-r border-slate-200 text-center">
+        {isAdmin && (
+          <input 
+            type="checkbox" 
+            checked={isSelected}
+            onChange={() => onToggleSelect(item.id)}
+            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          />
+        )}
+      </td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.so}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.rpro}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center sm:table-cell hidden">{item.kh || 'N/A'}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center font-medium text-slate-600">
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+          status === 'Đủ đơn' 
+            ? 'bg-emerald-100 text-emerald-700' 
+            : 'bg-rose-100 text-rose-700'
+        }`}>
+          {status || 'Đang kiểm tra...'}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.box_type}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center font-bold">
+        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
+      </td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.location_path || 'N/A'}</td>
+      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{new Date(item.created_at).toLocaleString('vi-VN')}</td>
+      <td className="px-2 py-3 border-b border-slate-200 text-center">
+        {isAdmin && (
+          <button 
+            onClick={() => onDelete(item.id)}
+            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+});
 
 export default function Inbound() {
   const { user: authUser } = useAuth();
@@ -77,30 +138,32 @@ export default function Inbound() {
     }
   }, [activeTab, historySearch, statusFilter]);
 
-  const filteredHistory = historyData.filter(item => {
-    const status = orderStatusMap[`${item.so}|${item.rpro}`] || '';
-    
-    // Status filter (dropdown)
-    let matchesStatus = true;
-    if (statusFilter === 'complete') matchesStatus = status === 'Đủ đơn';
-    else if (statusFilter === 'incomplete') {
-      matchesStatus = status !== '' && status !== 'Đủ đơn' && status !== 'Đang kiểm tra...';
-    }
-    
-    if (!matchesStatus) return false;
+  const filteredHistory = useMemo(() => {
+    return historyData.filter(item => {
+      const status = orderStatusMap[`${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`] || '';
+      
+      // Status filter (dropdown)
+      let matchesStatus = true;
+      if (statusFilter === 'complete') matchesStatus = status === 'Đủ đơn';
+      else if (statusFilter === 'incomplete') {
+        matchesStatus = status !== '' && status !== 'Đủ đơn' && status !== 'Đang kiểm tra...';
+      }
+      
+      if (!matchesStatus) return false;
 
-    // Search filter (text)
-    if (!historySearch.trim()) return true;
-    
-    const searchLower = historySearch.toLowerCase().trim();
-    return (
-      item.so?.toLowerCase().includes(searchLower) ||
-      item.rpro?.toLowerCase().includes(searchLower) ||
-      item.qr_code?.toLowerCase().includes(searchLower) ||
-      item.kh?.toLowerCase().includes(searchLower) ||
-      status.toLowerCase().includes(searchLower)
-    );
-  });
+      // Search filter (text)
+      if (!historySearch.trim()) return true;
+      
+      const searchLower = historySearch.toLowerCase().trim();
+      return (
+        item.so?.toLowerCase().includes(searchLower) ||
+        item.rpro?.toLowerCase().includes(searchLower) ||
+        item.qr_code?.toLowerCase().includes(searchLower) ||
+        item.kh?.toLowerCase().includes(searchLower) ||
+        status.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [historyData, orderStatusMap, statusFilter, historySearch]);
 
   const exportHistory = (format: 'xlsx' | 'csv') => {
     const dataToExport = filteredHistory;
@@ -331,13 +394,38 @@ export default function Inbound() {
       setHistoryTotal(totalCount);
       setHasMore(totalCount > targetPage * historyPageSize);
 
-        const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`)));
-        const statusMap: Record<string, string> = { ...orderStatusMap };
+      const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`)));
+      const statusMap: Record<string, string> = { ...orderStatusMap };
 
-        if (uniqueSORPRO.length > 0) {
-          const chunkSize = 50; // Smaller chunks for better reliability
-          for (let i = 0; i < uniqueSORPRO.length; i += chunkSize) {
-            const chunk = uniqueSORPRO.slice(i, i + chunkSize);
+      if (uniqueSORPRO.length > 0) {
+        // Create an index for faster lookup of item data
+        const itemLookup: Record<string, any> = {};
+        data.forEach(item => {
+          const key = `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`;
+          if (!itemLookup[key]) itemLookup[key] = item;
+        });
+
+        // OPTIMIZATION: If we already have almost all data in memory, check in-memory first
+        const inMemoryBoxMap: Record<string, Set<number>> = {};
+        if (data.length >= totalCount) {
+          data.forEach(item => {
+            const key = `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`;
+            if (!inMemoryBoxMap[key]) inMemoryBoxMap[key] = new Set();
+            const parsed = parseQRCode(item.qr_code);
+            inMemoryBoxMap[key].add(parsed.quantity);
+          });
+        }
+
+        const chunkSize = 100; // Larger chunks for fewer queries
+        for (let i = 0; i < uniqueSORPRO.length; i += chunkSize) {
+          const chunk = uniqueSORPRO.slice(i, i + chunkSize);
+          
+          let boxesForChunk: any[] = [];
+          
+          // Use in-memory if complete, otherwise query DB
+          if (data.length >= totalCount) {
+            // Logic handled below using inMemoryBoxMap
+          } else {
             const { data: allRelated, error: relError } = await supabase
               .from('inbound_transactions')
               .select('qr_code, so, rpro')
@@ -345,35 +433,44 @@ export default function Inbound() {
                 const [so, rpro] = key.split('|');
                 return `and(so.eq."${so || ''}",rpro.eq."${rpro || ''}")`;
               }).join(','));
-
-            if (!relError && allRelated) {
-              chunk.forEach(key => {
-                const [so, rpro] = key.split('|');
-                const relatedBoxes = allRelated.filter(b => (b.so?.trim() || '') === (so || '') && (b.rpro?.trim() || '') === (rpro || ''));
-                const itemInPage = data.find(d => (d.so?.trim() || '') === (so || '') && (d.rpro?.trim() || '') === (rpro || ''));
-                const total = itemInPage?.total_boxes || 0;
-                
-                if (total <= 0) {
-                  statusMap[key] = 'Đủ đơn';
-                } else {
-                  const presentBoxes = new Set<number>();
-                  relatedBoxes.forEach(b => {
-                    const parsed = parseQRCode(b.qr_code);
-                    presentBoxes.add(parsed.quantity);
-                  });
-
-                  const missing = [];
-                  for (let j = 1; j <= total; j++) {
-                    if (!presentBoxes.has(j)) missing.push(j);
-                  }
-                  statusMap[key] = missing.length === 0 ? 'Đủ đơn' : `Thiếu thùng số ${missing.join(', ')}`;
-                }
-              });
-              // Update state incrementally to provide feedback
-              setOrderStatusMap({ ...statusMap });
-            }
+            if (!relError && allRelated) boxesForChunk = allRelated;
           }
+
+          chunk.forEach(key => {
+            const [so, rpro] = key.split('|');
+            const itemInPage = itemLookup[key];
+            const total = itemInPage?.total_boxes || 0;
+            
+            if (total <= 0) {
+              statusMap[key] = 'Đủ đơn';
+            } else {
+              const presentBoxes = new Set<number>();
+              
+              if (data.length >= totalCount) {
+                const boxes = inMemoryBoxMap[key] || new Set();
+                boxes.forEach(b => presentBoxes.add(b));
+              } else {
+                const relatedBoxes = boxesForChunk.filter(b => (b.so?.trim() || '') === so && (b.rpro?.trim() || '') === rpro);
+                relatedBoxes.forEach(b => {
+                  const parsed = parseQRCode(b.qr_code);
+                  presentBoxes.add(parsed.quantity);
+                });
+              }
+
+              const missing = [];
+              for (let j = 1; j <= total; j++) {
+                if (!presentBoxes.has(j)) missing.push(j);
+              }
+              statusMap[key] = missing.length === 0 ? 'Đủ đơn' : `Thiếu thùng số ${missing.join(', ')}`;
+            }
+          });
+
+          // Refresh status map in batches to avoid overwhelming the UI
+          if (i % 500 === 0) setOrderStatusMap({ ...statusMap });
         }
+        // Final update
+        setOrderStatusMap({ ...statusMap });
+      }
       const formattedData = data.map(item => ({
         ...item,
         so: item.so?.trim() || '',
@@ -1314,49 +1411,17 @@ export default function Inbound() {
                     <th className="px-2 py-3 border-b border-slate-300"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white" style={{ contentVisibility: 'auto' }}>
                   {filteredHistory.map((item) => (
-                    <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedHistory.has(item.id) ? 'bg-blue-50' : ''}`}>
-                      <td className="px-2 py-3 border-b border-r border-slate-200 text-center">
-                        {isAdmin && (
-                          <input 
-                            type="checkbox" 
-                            checked={selectedHistory.has(item.id)}
-                            onChange={() => toggleSelectHistory(item.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.so}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.rpro}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center sm:table-cell hidden">{item.kh || 'N/A'}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center font-medium text-slate-600">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 
-                            ? 'bg-emerald-100 text-emerald-700' 
-                            : 'bg-rose-100 text-rose-700'
-                        }`}>
-                          {orderStatusMap[`${item.so}|${item.rpro}`] || 'Đang kiểm tra...'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.box_type}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center font-bold">
-                        {item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity}
-                      </td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.location_path || 'N/A'}</td>
-                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{new Date(item.created_at).toLocaleString('vi-VN')}</td>
-                      <td className="px-2 py-3 border-b border-slate-200 text-center">
-                        {isAdmin && (
-                          <button 
-                            onClick={() => deleteHistoryItem(item.id)}
-                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <HistoryRow 
+                      key={item.id}
+                      item={item}
+                      isAdmin={isAdmin}
+                      isSelected={selectedHistory.has(item.id)}
+                      status={orderStatusMap[`${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`]}
+                      onToggleSelect={toggleSelectHistory}
+                      onDelete={deleteHistoryItem}
+                    />
                   ))}
                 </tbody>
               </table>

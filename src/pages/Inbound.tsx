@@ -53,6 +53,7 @@ export default function Inbound() {
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
   const [historyLoading, setHistoryLoading] = useState(false);
+  const historyLoadingRef = useRef(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -269,105 +270,116 @@ export default function Inbound() {
   });
 
   async function fetchHistory(isNew = false) {
-    if (historyLoading) return;
+    if (historyLoadingRef.current) return;
+    historyLoadingRef.current = true;
     setHistoryLoading(true);
     setIsLoading(true);
     
-    if (isNew) {
-      setHistoryPage(1);
-      setHasMore(true);
-    }
-
-    const currentPage = isNew ? 1 : historyPage;
-    const from = (currentPage - 1) * historyPageSize;
-    const to = from + historyPageSize - 1;
-
-    let query = supabase
-      .from('inbound_transactions')
-      .select('*', { count: 'exact' });
-
-    if (historySearch.trim()) {
-      const search = historySearch.trim();
-      query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
-    }
-
-    const { data, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
-    } else if (data) {
-      if (data.length < historyPageSize) {
-        setHasMore(false);
-      }
-
-      // Calculate status for each SO/RPRO
-      const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
-      
-      const statusMap: Record<string, string> = { ...orderStatusMap };
-
-      if (uniqueSORPRO.length > 0) {
-        // Fetch all boxes for these SO/RPROs to check completeness
-        const { data: allRelated } = await supabase
-          .from('inbound_transactions')
-          .select('qr_code, so, rpro')
-          .or(uniqueSORPRO.map(key => {
-            const [so, rpro] = key.split('|');
-            return `and(so.eq."${so}",rpro.eq."${rpro}")`;
-          }).join(','));
-
-        uniqueSORPRO.forEach(key => {
-          const [so, rpro] = key.split('|');
-          const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
-          const itemInPage = data.find(d => d.so === so && d.rpro === rpro);
-          const total = itemInPage?.total_boxes || 0;
-          
-          if (total <= 0) {
-            statusMap[key] = 'Đủ đơn';
-            return;
-          }
-
-          const presentBoxes = new Set<number>();
-          relatedBoxes.forEach(b => {
-            const parsed = parseQRCode(b.qr_code);
-            presentBoxes.add(parsed.quantity); // quantity is boxNumber now
-          });
-
-          const missing = [];
-          for (let i = 1; i <= total; i++) {
-            if (!presentBoxes.has(i)) {
-              missing.push(i);
-            }
-          }
-
-          if (missing.length === 0) {
-            statusMap[key] = 'Đủ đơn';
-          } else {
-            statusMap[key] = `Thiếu thùng số ${missing.join(', ')}`;
-          }
-        });
-      }
-
-      setOrderStatusMap(statusMap);
-      const formattedData = data.map(item => ({
-        ...item,
-        so: item.so?.trim() || '',
-        rpro: item.rpro?.trim() || '',
-        qr_code: item.qr_code?.trim() || ''
-      }));
-
+    try {
       if (isNew) {
-        setHistoryData(formattedData);
-      } else {
-        setHistoryData(prev => [...prev, ...formattedData]);
+        setHistoryPage(1);
+        setHasMore(true);
       }
+
+      const currentPage = isNew ? 1 : historyPage;
+      const from = (currentPage - 1) * historyPageSize;
+      const to = from + historyPageSize - 1;
+
+      let query = supabase
+        .from('inbound_transactions')
+        .select('*', { count: 'exact' });
+
+      if (historySearch.trim()) {
+        const search = historySearch.trim();
+        query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+      }
+
+      const { data, count, error } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
       
-      if (count !== null) setHistoryTotal(count);
-      setHistoryPage(currentPage + 1);
+      if (error) {
+        setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
+      } else if (data) {
+        if (data.length < historyPageSize) {
+          setHasMore(false);
+        }
+
+        // Calculate status for each SO/RPRO
+        const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
+        
+        const statusMap: Record<string, string> = { ...orderStatusMap };
+
+        if (uniqueSORPRO.length > 0) {
+          // Fetch all boxes for these SO/RPROs to check completeness
+          const { data: allRelated } = await supabase
+            .from('inbound_transactions')
+            .select('qr_code, so, rpro')
+            .or(uniqueSORPRO.map(key => {
+              const [so, rpro] = key.split('|');
+              return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+            }).join(','));
+
+          uniqueSORPRO.forEach(key => {
+            const [so, rpro] = key.split('|');
+            const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
+            const itemInPage = data.find(d => d.so === so && d.rpro === rpro);
+            const total = itemInPage?.total_boxes || 0;
+            
+            if (total <= 0) {
+              statusMap[key] = 'Đủ đơn';
+              return;
+            }
+
+            const presentBoxes = new Set<number>();
+            relatedBoxes.forEach(b => {
+              const parsed = parseQRCode(b.qr_code);
+              presentBoxes.add(parsed.quantity); // quantity is boxNumber now
+            });
+
+            const missing = [];
+            for (let j = 1; j <= total; j++) {
+              if (!presentBoxes.has(j)) {
+                missing.push(j);
+              }
+            }
+
+            if (missing.length === 0) {
+              statusMap[key] = 'Đủ đơn';
+            } else {
+              statusMap[key] = `Thiếu thùng số ${missing.join(', ')}`;
+            }
+          });
+        }
+
+        setOrderStatusMap(statusMap);
+        const formattedData = data.map(item => ({
+          ...item,
+          so: item.so?.trim() || '',
+          rpro: item.rpro?.trim() || '',
+          qr_code: item.qr_code?.trim() || ''
+        }));
+
+        if (isNew) {
+          setHistoryData(formattedData);
+        } else {
+          setHistoryData(prev => {
+            const existingIds = new Set(prev.map(item => item.id));
+            const newItems = formattedData.filter(item => !existingIds.has(item.id));
+            return [...prev, ...newItems];
+          });
+        }
+        
+        if (count !== null) setHistoryTotal(count);
+        setHistoryPage(currentPage + 1);
+      }
+    } catch (err: any) {
+      console.error('Error in fetchHistory:', err);
+    } finally {
+      historyLoadingRef.current = false;
+      setHistoryLoading(false);
+      setIsLoading(false);
     }
-    setHistoryLoading(false);
-    setIsLoading(false);
   }
 
   async function fetchLocations() {
@@ -1232,7 +1244,7 @@ export default function Inbound() {
           </div>
           {/* Desktop Table View */}
           <div className="hidden md:block overflow-x-auto">
-            {historyLoading ? (
+            {historyLoading && historyData.length === 0 ? (
               <div className="p-12 text-center">
                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-slate-400">Đang tải dữ liệu...</p>
@@ -1264,9 +1276,10 @@ export default function Inbound() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">VỊ TRÍ</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">NGÀY NHẬP</th>
+                    <th className="px-2 py-3 border border-slate-300"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredHistory.map((item) => (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedHistory.has(item.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-2 py-3 border border-slate-200 text-center">

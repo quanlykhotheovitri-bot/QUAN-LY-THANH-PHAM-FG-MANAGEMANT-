@@ -237,21 +237,48 @@ export default function Transfer() {
 
       const inventoryMap = new Map(inventoryItems?.map(inv => [inv.qr_code, inv]) || []);
       
+      // 2.5 Batch fetch customer mapping from source_import_lines for missing inventory items
+      const missingInInventory = qrBatch.filter(b => !inventoryMap.has(b.parsed.qrCode));
+      const sourceMatches: any[] = [];
+      
+      if (missingInInventory.length > 0) {
+        const sos = Array.from(new Set(missingInInventory.map(b => b.parsed.so).filter(Boolean)));
+        const rpros = Array.from(new Set(missingInInventory.map(b => b.parsed.rpro).filter(Boolean)));
+        
+        for (let i = 0; i < sos.length; i += 200) {
+          const chunk = sos.slice(i, i + 200);
+          const { data } = await supabase.from('source_import_lines').select('so, rpro, kh, quantity').in('so', chunk);
+          if (data) sourceMatches.push(...data);
+        }
+        for (let i = 0; i < rpros.length; i += 200) {
+          const chunk = rpros.slice(i, i + 200);
+          const { data } = await supabase.from('source_import_lines').select('so, rpro, kh, quantity').in('rpro', chunk);
+          if (data) sourceMatches.push(...data);
+        }
+      }
+
       // 3. Construct new items
       const newItems = qrBatch.map(batchInfo => {
         const { parsed, targetLoc } = batchInfo;
         const inventoryItem = inventoryMap.get(parsed.qrCode);
+        const sourceMatch = sourceMatches.find(s => 
+          (parsed.rpro && s.rpro === parsed.rpro) || (parsed.so && s.so === parsed.so)
+        );
         
+        const kh = inventoryItem?.kh || sourceMatch?.kh || 'N/A';
+        const expectedQty = sourceMatch?.quantity || 0;
+
         return {
           ...parsed,
           id: inventoryItem?.id || null,
-          kh: inventoryItem?.kh || 'N/A',
+          kh,
           fromLocation: inventoryItem?.location_path || 'N/A',
           toLocation: targetLoc || matchedLocation?.full_path || locationInput,
           quantity: inventoryItem?.quantity || parsed.quantity,
           boxType: inventoryItem?.box_type || 'N/A',
-          status: (!inventoryItem) ? 'Wrong' : 'OK',
-          note: (!inventoryItem) ? 'Không có trong tồn kho' : ''
+          totalBoxes: expectedQty || parsed.totalBoxes,
+          status: (!inventoryItem) ? (sourceMatch ? 'OK' : 'Wrong') : 'OK',
+          note: (!inventoryItem) ? (sourceMatch ? 'Mới - Chờ nhập kho' : 'Không có trong tồn kho & Không có trong nguồn') : ''
         };
       });
 
@@ -284,7 +311,7 @@ export default function Transfer() {
 
     const wrongItems = scannedItems.filter(item => item.status === 'Wrong');
     if (wrongItems.length > 0) {
-      if (!window.confirm(`Có ${wrongItems.length} kiện hàng không hợp lệ sẽ bị bỏ qua. Bạn có muốn tiếp tục?`)) {
+      if (!window.confirm(`Có ${wrongItems.length} kiện hàng không hợp lệ (không có trong nguồn & không có trong kho) sẽ bị bỏ qua. Bạn có muốn tiếp tục?`)) {
         return;
       }
     }
@@ -293,32 +320,58 @@ export default function Transfer() {
     setIsLoading(true);
     try {
       const now = new Date().toISOString();
-      const chunkSize = 2000; // Even larger chunk for RPC
-      
-      for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
-        const chunk = itemsToProcess.slice(i, i + chunkSize);
-        
-        const payload = {
-          device_info: `Transfer Tab - ${authUser?.email || 'System'}`,
-          items: chunk.map(item => ({
-            id: item.id,
-            qrCode: item.qrCode,
-            so: item.so,
-            rpro: item.rpro,
-            kh: item.kh,
-            fromLocation: item.fromLocation,
-            toLocation: item.toLocation,
-            quantity: item.quantity,
-            remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
-          }))
-        };
+      const existingItems = itemsToProcess.filter(item => item.id !== null);
+      const newItems = itemsToProcess.filter(item => item.id === null);
 
-        const { error: rpcError } = await supabase.rpc('process_transfer_v1', { p_data: payload });
-
-        if (rpcError) throw rpcError;
+      // 1. Process Transfers for existing items
+      if (existingItems.length > 0) {
+        const chunkSize = 1000;
+        for (let i = 0; i < existingItems.length; i += chunkSize) {
+          const chunk = existingItems.slice(i, i + chunkSize);
+          const payload = {
+            device_info: `Transfer Tab - ${authUser?.email || 'System'}`,
+            items: chunk.map(item => ({
+              id: item.id,
+              qrCode: item.qrCode,
+              so: item.so,
+              rpro: item.rpro,
+              kh: item.kh,
+              fromLocation: item.fromLocation,
+              toLocation: item.toLocation,
+              quantity: item.quantity,
+              remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
+            }))
+          };
+          const { error: rpcError } = await supabase.rpc('process_transfer_v1', { p_data: payload });
+          if (rpcError) throw rpcError;
+        }
       }
 
-      setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
+      // 2. Process Inbounds for new items
+      if (newItems.length > 0) {
+        const chunkSize = 1000;
+        for (let i = 0; i < newItems.length; i += chunkSize) {
+          const chunk = newItems.slice(i, i + chunkSize);
+          const payload = {
+            device_info: `Transfer Tab Import - ${authUser?.email || 'System'}`,
+            items: chunk.map(item => ({
+              qr_code: item.qrCode,
+              so: item.so,
+              rpro: item.rpro,
+              kh: item.kh,
+              quantity: item.quantity,
+              total_boxes: item.totalBoxes,
+              location_path: item.toLocation,
+              box_type: item.boxType || 'N/A'
+            }))
+          };
+          // Note: Using process_inbound_v1 to insert new inventory records
+          const { error: inboundError } = await supabase.rpc('process_inbound_v1', { p_data: payload });
+          if (inboundError) throw inboundError;
+        }
+      }
+
+      setMessage({ type: 'success', text: `Đã xử lý thành công ${itemsToProcess.length} kiện hàng (${existingItems.length} chuyển, ${newItems.length} nhập mới).` });
       
       // Keep items that were not processed (e.g. Wrong status or no location)
       const processedQrCodes = new Set(itemsToProcess.map(i => i.qrCode));
@@ -640,7 +693,10 @@ export default function Transfer() {
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.rpro}</td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center font-bold">{item.quantity}</td>
                             <td className={`px-4 py-3 text-[11px] border border-slate-200 text-center font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              {item.status === 'OK' ? 'Hợp lệ' : 'Lỗi'}
+                              <div className="flex flex-col items-center">
+                                <span>{item.status === 'OK' ? (item.id ? 'Hợp lệ' : 'Mới') : 'Lỗi'}</span>
+                                {item.note && <span className="text-[9px] font-normal italic leading-tight text-slate-400 mt-0.5 whitespace-normal max-w-[150px]">{item.note}</span>}
+                              </div>
                             </td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {!isViewer && (

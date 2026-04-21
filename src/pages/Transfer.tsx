@@ -305,10 +305,10 @@ export default function Transfer() {
     if (scannedItems.length === 0) return;
     
     const wrongItems = scannedItems.filter(item => item.status === 'Wrong');
-    const itemsToProcess = scannedItems.filter(item => item.toLocation && item.status === 'OK');
+    const itemsToProcess = scannedItems.filter(item => (item.toLocation || locationInput) && item.status === 'OK');
     
     if (itemsToProcess.length === 0 && wrongItems.length === 0) {
-      setMessage({ type: 'error', text: 'Không có kiện hàng hợp lệ để xử lý.' });
+      setMessage({ type: 'error', text: 'Không có kiện hàng hợp lệ để xử lý (Vui lòng chọn vị trí đích).' });
       return;
     }
 
@@ -342,7 +342,7 @@ export default function Transfer() {
               rpro: item.rpro,
               kh: item.kh,
               fromLocation: item.fromLocation,
-              toLocation: item.toLocation,
+              toLocation: item.toLocation || locationInput,
               quantity: item.quantity,
               remark: `Chuyển vị trí hàng (Bulk RPC) - ${authUser?.email || 'System'}`
             }))
@@ -366,7 +366,7 @@ export default function Transfer() {
               kh: item.kh,
               quantity: item.quantity,
               total_boxes: item.totalBoxes,
-              location_path: item.toLocation,
+              location_path: item.toLocation || locationInput,
               box_type: item.boxType || 'N/A'
             }))
           };
@@ -397,13 +397,16 @@ export default function Transfer() {
   };
 
   const handleForceInboundErrors = async () => {
-    const wrongItems = scannedItems.filter(item => item.status === 'Wrong' && item.toLocation);
+    // Determine which items to process: those with a specific toLocation OR using the global locationInput
+    const wrongItems = scannedItems.filter(item => item.status === 'Wrong' && (item.toLocation || locationInput));
+    
     if (wrongItems.length === 0) {
-      setMessage({ type: 'error', text: 'Vui lòng chọn vị trí đích cho các mã lỗi trước khi nhập kho.' });
+      setMessage({ type: 'error', text: 'Vui lòng nhập Vị trí đích cho các mã lỗi trước khi thực hiện.' });
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc chắn muốn nhập kho ${wrongItems.length} kiện hàng bị lỗi này? (Thông tin Khách hàng sẽ là N/A)`)) {
+    const targetLocation = locationInput;
+    if (!window.confirm(`Bạn có chắc chắn muốn nhập kho ${wrongItems.length} kiện hàng bị lỗi này vào vị trí "${targetLocation || 'theo từng kiện'}"? (Thông tin Khách hàng sẽ là N/A)`)) {
       return;
     }
 
@@ -422,7 +425,7 @@ export default function Transfer() {
             kh: 'N/A',
             quantity: item.quantity,
             total_boxes: item.totalBoxes || 0,
-            location_path: item.toLocation,
+            location_path: item.toLocation || targetLocation,
             box_type: item.boxType || 'N/A'
           }))
         };
@@ -759,8 +762,8 @@ export default function Transfer() {
                               <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded">{item.fromLocation}</span>
                             </td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">
-                              <span className={`px-2 py-1 rounded font-bold ${item.toLocation ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-400 italic'}`}>
-                                {item.toLocation || 'Chưa có'}
+                              <span className={`px-2 py-1 rounded font-bold ${(item.toLocation || locationInput) ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-400 italic'}`}>
+                                {item.toLocation || locationInput || 'Chưa có'}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-[11px] border border-slate-200 text-center">{item.so}</td>

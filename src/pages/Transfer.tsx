@@ -11,6 +11,7 @@ import {
   Save, 
   Trash2,
   Package,
+  PackagePlus,
   MapPin,
   ArrowRight,
   History as HistoryIcon,
@@ -303,17 +304,21 @@ export default function Transfer() {
   const confirmTransfer = async () => {
     if (scannedItems.length === 0) return;
     
+    const wrongItems = scannedItems.filter(item => item.status === 'Wrong');
     const itemsToProcess = scannedItems.filter(item => item.toLocation && item.status === 'OK');
-    if (itemsToProcess.length === 0) {
-      setMessage({ type: 'error', text: 'Không có kiện hàng hợp lệ để chuyển vị trí.' });
+    
+    if (itemsToProcess.length === 0 && wrongItems.length === 0) {
+      setMessage({ type: 'error', text: 'Không có kiện hàng hợp lệ để xử lý.' });
       return;
     }
 
-    const wrongItems = scannedItems.filter(item => item.status === 'Wrong');
-    if (wrongItems.length > 0) {
-      if (!window.confirm(`Có ${wrongItems.length} kiện hàng không hợp lệ (không có trong nguồn & không có trong kho) sẽ bị bỏ qua. Bạn có muốn tiếp tục?`)) {
+    if (wrongItems.length > 0 && itemsToProcess.length > 0) {
+      if (!window.confirm(`Có ${wrongItems.length} kiện hàng bị lỗi sẽ bị bỏ qua. Bạn có chắc muốn tiếp tục xử lý ${itemsToProcess.length} kiện hợp lệ?`)) {
         return;
       }
+    } else if (wrongItems.length > 0 && itemsToProcess.length === 0) {
+      setMessage({ type: 'error', text: 'Vui lòng nhấn nút "CHUYỂN NHẬP KHO (MÃ LỖI)" để xử lý các mã này.' });
+      return;
     }
 
     setLoading(true);
@@ -365,7 +370,6 @@ export default function Transfer() {
               box_type: item.boxType || 'N/A'
             }))
           };
-          // Note: Using process_inbound_v1 to insert new inventory records
           const { error: inboundError } = await supabase.rpc('process_inbound_v1', { p_data: payload });
           if (inboundError) throw inboundError;
         }
@@ -373,11 +377,9 @@ export default function Transfer() {
 
       setMessage({ type: 'success', text: `Đã xử lý thành công ${itemsToProcess.length} kiện hàng (${existingItems.length} chuyển, ${newItems.length} nhập mới).` });
       
-      // Keep items that were not processed (e.g. Wrong status or no location)
       const processedQrCodes = new Set(itemsToProcess.map(i => i.qrCode));
       setScannedItems(prev => prev.filter(item => !processedQrCodes.has(item.qrCode)));
       
-      // Update selections to remove processed items
       setSelectedScanned(prev => {
         const next = new Set(prev);
         processedQrCodes.forEach(qr => next.delete(qr));
@@ -387,7 +389,62 @@ export default function Transfer() {
       setScannedPage(1);
       clearAppCache();
     } catch (error: any) {
-      setMessage({ type: 'error', text: 'Lỗi khi chuyển vị trí: ' + error.message });
+      setMessage({ type: 'error', text: 'Lỗi khi xử lý: ' + error.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleForceInboundErrors = async () => {
+    const wrongItems = scannedItems.filter(item => item.status === 'Wrong' && item.toLocation);
+    if (wrongItems.length === 0) {
+      setMessage({ type: 'error', text: 'Vui lòng chọn vị trí đích cho các mã lỗi trước khi nhập kho.' });
+      return;
+    }
+
+    if (!window.confirm(`Bạn có chắc chắn muốn nhập kho ${wrongItems.length} kiện hàng bị lỗi này? (Thông tin Khách hàng sẽ là N/A)`)) {
+      return;
+    }
+
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      const chunkSize = 1000;
+      for (let i = 0; i < wrongItems.length; i += chunkSize) {
+        const chunk = wrongItems.slice(i, i + chunkSize);
+        const payload = {
+          device_info: `Transfer Tab Force Import - ${authUser?.email || 'System'}`,
+          items: chunk.map(item => ({
+            qr_code: item.qrCode,
+            so: item.so,
+            rpro: item.rpro,
+            kh: 'N/A',
+            quantity: item.quantity,
+            total_boxes: item.totalBoxes || 0,
+            location_path: item.toLocation,
+            box_type: item.boxType || 'N/A'
+          }))
+        };
+        const { error: inboundError } = await supabase.rpc('process_inbound_v1', { p_data: payload });
+        if (inboundError) throw inboundError;
+      }
+
+      setMessage({ type: 'success', text: `Đã nhập kho thành công ${wrongItems.length} kiện hàng lỗi.` });
+      
+      const processedQrCodes = new Set(wrongItems.map(i => i.qrCode));
+      setScannedItems(prev => prev.filter(item => !processedQrCodes.has(item.qrCode)));
+      
+      setSelectedScanned(prev => {
+        const next = new Set(prev);
+        processedQrCodes.forEach(qr => next.delete(qr));
+        return next;
+      });
+
+      setScannedPage(1);
+      clearAppCache();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi nhập kho mã lỗi: ' + error.message });
     } finally {
       setLoading(false);
       setIsLoading(false);
@@ -583,6 +640,23 @@ export default function Transfer() {
                     <>
                       <Save className="w-6 h-6" />
                       XÁC NHẬN CHUYỂN ({scannedItems.length})
+                    </>
+                  )}
+                </button>
+              )}
+
+              {scannedItems.some(item => item.status === 'Wrong') && (
+                <button
+                  onClick={handleForceInboundErrors}
+                  disabled={loading}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-rose-100 flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <PackagePlus className="w-6 h-6" />
+                      CHUYỂN NHẬP KHO ({scannedItems.filter(i => i.status === 'Wrong').length} MÃ LỖI)
                     </>
                   )}
                 </button>

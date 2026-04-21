@@ -1547,8 +1547,12 @@ export default function Outbound() {
     const renderTable = (items: any[], titleSuffix: string = "") => {
       if (items.length === 0) return "";
       
-      // Ensure items are sorted by location A-Z
-      const sortedItems = [...items].sort((a, b) => (a.location || '').localeCompare(b.location || ''));
+      // Ensure items are sorted by location A-Z, then by PL No A-Z
+      const sortedItems = [...items].sort((a, b) => {
+        const locCompare = (a.location || '').localeCompare(b.location || '');
+        if (locCompare !== 0) return locCompare;
+        return (a.plNo || '').localeCompare(b.plNo || '');
+      });
 
       return `
         ${titleSuffix ? `<h3 style="color: #e67e22; margin-top: 20px; font-size: 14px; text-align: left; border-bottom: 2px solid #e67e22; padding-bottom: 5px;">DANH SÁCH ${titleSuffix}</h3>` : ''}

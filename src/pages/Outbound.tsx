@@ -68,6 +68,8 @@ export default function Outbound() {
   const [outboundPage, setOutboundPage] = useState(1);
   const [outboundTotal, setOutboundTotal] = useState(0);
   const outboundPageSize = 50;
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   // PL state
   const [plItems, setPlItems] = useState<any[]>([]);
@@ -98,7 +100,7 @@ export default function Outbound() {
     fetchCurrentPLItems();
     fetchCurrentScannedItems();
     fetchOutboundData();
-  }, [activeTab, outboundPage, dataSubTab, outboundSearch]);
+  }, [activeTab, outboundPage, dataSubTab, outboundSearch, startDate, endDate]);
 
   const enrichedScannedItems = useMemo(() => {
     return scannedItems.map(item => {
@@ -376,38 +378,86 @@ export default function Outbound() {
     }
   }
 
-  const exportOutboundData = (format: 'xlsx' | 'csv') => {
-    const data = filteredOutbound.map(item => {
-      if (dataSubTab === 'scan') {
-        return {
-          'QRCODE': item.qr_code,
-          'DATE': formatDate(item.created_at),
-          'OVN Order No': item.so,
-          'RPRO': item.rpro,
-          'KHÁCH HÀNG': item.kh,
-          'PL No': item.pl_no,
-          'Total Box': item.total_boxes,
-          'STATUS': item.status
-        };
-      } else {
-        return {
-          'DATE': formatDate(item.created_at),
-          'OVN Order No': item.so,
-          'RPRO': item.rpro,
-          'KHÁCH HÀNG': item.kh,
-          'PL No': item.pl_no,
-          'Total Box': item.total_boxes,
-          'Scan Xuất': item.scan_count,
-          'Status': item.status,
-          'Location': item.location_path
-        };
-      }
-    });
+  const exportOutboundData = async (format: 'xlsx' | 'csv') => {
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      let query = supabase
+        .from('outbound_transactions')
+        .select('*')
+        .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, dataSubTab === 'scan' ? 'ScanData' : 'PLData');
-    XLSX.writeFile(wb, `Outbound_${dataSubTab}_${new Date().toISOString().split('T')[0]}.${format}`);
+      if (outboundSearch.trim()) {
+        query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%`);
+      }
+
+      if (startDate) {
+        query = query.gte('created_at', `${startDate}T00:00:00`);
+      }
+      if (endDate) {
+        query = query.lte('created_at', `${endDate}T23:59:59`);
+      }
+
+      const { data: allData, error } = await query.order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (!allData || allData.length === 0) {
+        setMessage({ type: 'error', text: 'Không có dữ liệu để xuất kho.' });
+        return;
+      }
+
+      // Filter by status on the client side since status is complex
+      let finalData = allData;
+      if (outboundStatusFilter !== 'ALL') {
+        finalData = allData.filter(item => {
+          const itemStatus = item.status?.toUpperCase();
+          if (outboundStatusFilter === 'OK') return itemStatus === 'OK' || itemStatus === 'ĐỦ';
+          if (outboundStatusFilter === 'Wrong') return itemStatus === 'WRONG' || itemStatus === 'SAI';
+          if (outboundStatusFilter === 'THIEU') return itemStatus?.includes('THIẾU');
+          if (outboundStatusFilter === 'DU') return itemStatus?.includes('DƯ');
+          return true;
+        });
+      }
+
+      const exportRows = finalData.map(item => {
+        if (dataSubTab === 'scan') {
+          return {
+            'QRCODE': item.qr_code,
+            'DATE': formatDate(item.created_at),
+            'OVN Order No': item.so,
+            'RPRO': item.rpro,
+            'KHÁCH HÀNG': item.kh,
+            'PL No': item.pl_no,
+            'Total Box': item.quantity,
+            'STATUS': item.status
+          };
+        } else {
+          return {
+            'DATE': formatDate(item.created_at),
+            'OVN Order No': item.so,
+            'RPRO': item.rpro,
+            'KHÁCH HÀNG': item.kh,
+            'PL No': item.pl_no,
+            'Total Box': item.quantity,
+            'Scan Xuất': item.scan_count,
+            'Status': item.status,
+            'Location': item.location_path
+          };
+        }
+      });
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, dataSubTab === 'scan' ? 'ScanData' : 'PLData');
+      XLSX.writeFile(wb, `Outbound_${dataSubTab}_${new Date().toISOString().split('T')[0]}.${format}`);
+      setMessage({ type: 'success', text: `Đã xuất ${exportRows.length} dòng dữ liệu.` });
+    } catch (err: any) {
+      console.error('Export error:', err);
+      setMessage({ type: 'error', text: 'Lỗi khi xuất dữ liệu: ' + err.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
   };
 
   const exportCurrentPL = (format: 'xlsx' | 'csv') => {
@@ -1071,6 +1121,13 @@ export default function Outbound() {
 
     if (outboundSearch.trim()) {
       query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%`);
+    }
+
+    if (startDate) {
+      query = query.gte('created_at', `${startDate}T00:00:00`);
+    }
+    if (endDate) {
+      query = query.lte('created_at', `${endDate}T23:59:59`);
     }
 
     const { data, count, error } = await query
@@ -2334,8 +2391,33 @@ export default function Outbound() {
                 2. Danh sách PL
               </button>
             </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <div className="relative min-w-[200px]">
+              <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Từ</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="text-sm font-bold text-slate-700 outline-none"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase ml-2">Đến</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="text-sm font-bold text-slate-700 outline-none"
+                  />
+                  {(startDate || endDate) && (
+                    <button 
+                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      className="ml-2 p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
+                      title="Xóa lọc ngày"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <div className="relative min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
@@ -2389,16 +2471,6 @@ export default function Outbound() {
           <div className="bg-white rounded-2xl border-2 border-orange-600 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-orange-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h2 className="text-lg font-bold text-orange-900">Lịch sử xuất kho (DATA XUẤT KHO)</h2>
-              <div className="flex-1 max-w-md relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Tìm kiếm theo SO, RPRO, KH..."
-                  value={outboundSearch}
-                  onChange={(e) => setOutboundSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                />
-              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse border border-slate-200">

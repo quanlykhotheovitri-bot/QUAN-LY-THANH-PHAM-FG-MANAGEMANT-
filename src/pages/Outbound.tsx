@@ -73,6 +73,7 @@ export default function Outbound() {
   const [plItems, setPlItems] = useState<any[]>([]);
   const [selectedPlItems, setSelectedPlItems] = useState<Set<string>>(new Set());
   const [plNumbers, setPlNumbers] = useState<string[]>([]);
+  const [selectedPlNoFilter, setSelectedPlNoFilter] = useState<string>('ALL');
   const [sourceFiles, setSourceFiles] = useState<Array<{ name: string, status: 'pending' | 'success' | 'error', data: any[], error?: string }>>([]);
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
   const [editingItem, setEditingItem] = useState<any | null>(null);
@@ -103,13 +104,19 @@ export default function Outbound() {
     return scannedItems.map(item => {
       const cleanedSo = cleanId(item.so);
       const cleanedRpro = cleanId(item.rpro);
+      const cleanedPlNo = cleanId(item.plNo);
 
-      // 1. Match with PL automatically
+      // 1. Match with PL automatically - USE COMBINED KEY (PL + SO/RPRO)
       let plMatch = null;
       if (plItems.length > 0) {
-        plMatch = plItems.find(p => 
-          (cleanedRpro && p.rpro ? cleanId(p.rpro) === cleanedRpro : cleanId(p.so) === cleanedSo)
-        );
+        plMatch = plItems.find(p => {
+          const pPlNo = cleanId(p.plNo);
+          // Only match if PL No matches or if we are in "global" mode (but ideally strict)
+          const plMatches = !cleanedPlNo || !pPlNo || cleanedPlNo === pPlNo;
+          if (!plMatches) return false;
+
+          return (cleanedRpro && p.rpro ? cleanId(p.rpro) === cleanedRpro : cleanId(p.so) === cleanedSo);
+        });
       }
 
       // 2. Find in Inventory
@@ -165,11 +172,17 @@ export default function Outbound() {
     scannedItems.forEach(s => {
       const cleanedRpro = cleanId(s.rpro);
       const cleanedSo = cleanId(s.so);
+      const cleanedPlNo = cleanId(s.plNo);
+      
+      // Virtual key for RPRO and SO within a PL
+      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+      const soKey = `${cleanedPlNo}|${cleanedSo}`;
+      
       if (cleanedRpro) {
-        rproCounts.set(cleanedRpro, (rproCounts.get(cleanedRpro) || 0) + 1);
+        rproCounts.set(rproKey, (rproCounts.get(rproKey) || 0) + 1);
       }
       if (cleanedSo) {
-        soCounts.set(cleanedSo, (soCounts.get(cleanedSo) || 0) + 1);
+        soCounts.set(soKey, (soCounts.get(soKey) || 0) + 1);
       }
     });
 
@@ -216,23 +229,32 @@ export default function Outbound() {
   const filteredPlItems = useMemo(() => {
     let result = plItems;
     
+    // PL No filter
+    if (selectedPlNoFilter !== 'ALL') {
+      result = result.filter(item => cleanId(item.plNo) === cleanId(selectedPlNoFilter));
+    }
+
     // Search filter
     if (plSearch.trim()) {
       const searchLower = plSearch.toLowerCase().trim();
       result = result.filter(item => 
         (item.so?.toLowerCase().includes(searchLower)) || 
         (item.rpro?.toLowerCase().includes(searchLower)) ||
-        (item.kh?.toLowerCase().includes(searchLower))
+        (item.kh?.toLowerCase().includes(searchLower)) ||
+        (item.plNo?.toLowerCase().includes(searchLower))
       );
     }
 
-    // Since status for PL items is calculated in render/map right now in the original code,
-    // we should ideally move that logic or duplicate parts of it for filtering.
     if (plStatusFilter !== 'ALL') {
       result = result.filter(item => {
         const cleanedSo = cleanId(item.so);
         const cleanedRpro = cleanId(item.rpro);
-        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
+        const cleanedPlNo = cleanId(item.plNo);
+        
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
+
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
         const diff = item.totalBoxes - scanCount;
         
         if (plStatusFilter === 'OK') return diff === 0;
@@ -243,7 +265,7 @@ export default function Outbound() {
     }
     
     return result;
-  }, [plItems, plSearch, plStatusFilter, plItemStats]);
+  }, [plItems, plSearch, plStatusFilter, plItemStats, selectedPlNoFilter]);
 
   const filteredOutbound = useMemo(() => {
     let result = outboundData;
@@ -322,6 +344,7 @@ export default function Outbound() {
         const { data, error } = await supabase
           .from('current_pl_items')
           .select('*')
+          .order('pl_no', { ascending: false })
           .order('created_at', { ascending: true })
           .range(offset, offset + limit - 1);
 
@@ -670,8 +693,15 @@ export default function Outbound() {
 
           const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
           const rproIdx = headers.indexOf('rpro');
-          const boxIdx = headers.findIndex(h => h.includes('total box'));
+          const boxIdx = headers.findIndex(h => h.includes('total box') || h.includes('c/no'));
           const qtyIdx = headers.indexOf('qty');
+          const soIdx = headers.findIndex(h => 
+            h.includes('order no') || h.includes('batch no') || h.includes('so no')
+          );
+
+          if (soIdx === -1 || qtyIdx === -1) {
+            continue; 
+          }
 
           const mapped = [];
           const seenSO = new Set<string>();
@@ -685,37 +715,21 @@ export default function Outbound() {
             const rowStr = row.map(c => String(c || '').trim()).join(' ');
             const rowStrLower = rowStr.toLowerCase();
 
-            // Break if we hit a Total row (check entire row)
-            if (rowStrLower.startsWith('total') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
-               // If there's another table below, we might want to continue, but usually we just want the first one
-               // or we should update PL No if it changes.
-               // For safety with current structure, let's break if we hit a final total.
-               if (rowStrLower.includes('grand total') || rowStrLower.includes('total:')) break;
+            // BREAK at the first 'Total' row we hit. No more rows should be processed for this table.
+            if (rowStrLower === 'total' || rowStrLower.startsWith('total ') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
+               break; 
             }
 
-            // Dynamically update PL No if we find a new one in a row
-            if (rowStr.toUpperCase().includes('PL-')) {
-              const match = rowStr.match(/PL-[\w-]+/i);
-              if (match) currentPlNo = match[0];
-            }
-
-            // Dynamically update Customer if a new one is found (for multi-PL sheets)
-            if (rowStrLower.includes('customer:')) {
-              const parts = rowStr.split(/customer:/i);
-              if (parts[1]) {
-                currentCustomer = parts[1]
-                  .split(/erp/i)[0]
-                  .split(/delivery/i)[0]
-                  .split(/pl-/i)[0]
-                  .trim();
-              }
+            // Check if we hit a footer marker
+            if (rowStrLower.includes('prepared by') || rowStrLower.includes('approved by')) {
+              break;
             }
 
             const soValue = String(row[soIdx] || '').trim();
             if (!soValue) continue;
             
             const soUpper = soValue.toUpperCase();
-            if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
+            if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-') || soUpper.startsWith('OV-')) {
               // Deduplicate within the same file to prevent multi-parse issues
               const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
               if (seenSO.has(compositeKey)) continue;
@@ -727,7 +741,7 @@ export default function Outbound() {
                 rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
                 kh: currentCustomer,
                 qty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
-                totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
+                totalBoxes: boxIdx !== -1 ? (parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0) : 0,
               });
             }
           }
@@ -842,8 +856,15 @@ export default function Outbound() {
 
                     const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
                     const rproIdx = headers.indexOf('rpro');
-                    const boxIdx = headers.findIndex(h => h.includes('total box'));
+                    const boxIdx = headers.findIndex(h => h.includes('total box') || h.includes('c/no'));
                     const qtyIdx = headers.indexOf('qty');
+                    const soIdx = headers.findIndex(h => 
+                      h.includes('order no') || h.includes('batch no') || h.includes('so no')
+                    );
+
+                    if (soIdx === -1 || qtyIdx === -1) {
+                      continue; 
+                    }
 
                     const mapped = [];
                     const seenSO = new Set<string>();
@@ -857,34 +878,20 @@ export default function Outbound() {
                       const rowStr = row.map(c => String(c || '').trim()).join(' ');
                       const rowStrLower = rowStr.toLowerCase();
 
-                      // Robust break for total rows
-                      if (rowStrLower.startsWith('total') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
-                         if (rowStrLower.includes('grand total') || rowStrLower.includes('total:')) break;
+                      // Robust break for total rows - STOP here to avoid orphan rows mislabeling
+                      if (rowStrLower === 'total' || rowStrLower.startsWith('total ') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
+                         break;
                       }
 
-                      // Dynamic PL No update
-                      if (rowStr.toUpperCase().includes('PL-')) {
-                        const match = rowStr.match(/PL-[\w-]+/i);
-                        if (match) currentPlNo = match[0];
-                      }
-
-                      // Dynamic Customer update
-                      if (rowStrLower.includes('customer:')) {
-                        const parts = rowStr.split(/customer:/i);
-                        if (parts[1]) {
-                          currentCustomer = parts[1]
-                            .split(/erp/i)[0]
-                            .split(/delivery/i)[0]
-                            .split(/pl-/i)[0]
-                            .trim();
-                        }
+                      if (rowStrLower.includes('prepared by') || rowStrLower.includes('approved by')) {
+                        break;
                       }
 
                       const soValue = String(row[soIdx] || '').trim();
                       if (!soValue) continue;
                       
                       const soUpper = soValue.toUpperCase();
-                      if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
+                      if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-') || soUpper.startsWith('OV-')) {
                         const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
                         if (seenSO.has(compositeKey)) continue;
                         seenSO.add(compositeKey);
@@ -895,7 +902,7 @@ export default function Outbound() {
                           rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
                           kh: currentCustomer,
                           plNo: currentPlNo,
-                          totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
+                          totalBoxes: boxIdx !== -1 ? (parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0) : 0,
                           outQty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
                           status: 'ok',
                           note: '',
@@ -953,19 +960,38 @@ export default function Outbound() {
     }
 
     const allPlItemsToInsert: any[] = [];
+    
+    // Virtual key check to prevent duplicate insertion of the same items if already in current list
+    const existingKeys = new Set(plItems.map(item => 
+      `${cleanId(item.plNo)}|${cleanId(item.so)}|${cleanId(item.rpro)}`
+    ));
 
     successFiles.forEach(file => {
       file.data.forEach(item => {
-        allPlItemsToInsert.push({
-          pl_no: item.plNo?.trim() || 'N/A',
-          so: item.so?.trim() || '',
-          rpro: item.rpro?.trim() || '',
-          kh: item.kh?.trim() || '',
-          qty: item.outQty,
-          total_boxes: item.totalBoxes
-        });
+        const itemPlNo = item.plNo?.trim() || 'N/A';
+        const itemSo = item.so?.trim() || '';
+        const itemRpro = item.rpro?.trim() || '';
+        const key = `${cleanId(itemPlNo)}|${cleanId(itemSo)}|${cleanId(itemRpro)}`;
+        
+        if (!existingKeys.has(key)) {
+          allPlItemsToInsert.push({
+            pl_no: itemPlNo,
+            so: itemSo,
+            rpro: itemRpro,
+            kh: item.kh?.trim() || '',
+            qty: item.outQty,
+            total_boxes: item.totalBoxes
+          });
+          existingKeys.add(key); // Also track within the batch
+        }
       });
     });
+
+    if (allPlItemsToInsert.length === 0) {
+      setMessage({ type: 'success', text: 'Dữ liệu đã tồn tại trong danh sách PL hiện tại.' });
+      setSourceFiles([]);
+      return;
+    }
 
     const { error } = await supabase.from('current_pl_items').insert(allPlItemsToInsert);
     if (error) {
@@ -1987,17 +2013,29 @@ export default function Outbound() {
                     </div>
                   </div>
 
-                  <div className="flex-1 max-w-md relative flex gap-2">
-                    <div className="relative flex-1">
+                  <div className="flex-1 max-w-2xl relative flex flex-wrap gap-2">
+                    <div className="relative flex-1 min-w-[200px]">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         type="text"
-                        placeholder="Tìm kiếm theo SO, RPRO, Khách hàng..."
+                        placeholder="Tìm SO, RPRO, Khách hàng, PL..."
                         value={plSearch}
                         onChange={(e) => setPlSearch(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                       />
                     </div>
+                    
+                    <select
+                      value={selectedPlNoFilter}
+                      onChange={(e) => setSelectedPlNoFilter(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all cursor-pointer min-w-[120px]"
+                    >
+                      <option value="ALL">TẤT CẢ PL</option>
+                      {plNumbers.map(pl => (
+                        <option key={pl} value={pl}>{pl}</option>
+                      ))}
+                    </select>
+
                     <select
                       value={plStatusFilter}
                       onChange={(e: any) => setPlStatusFilter(e.target.value)}
@@ -2130,8 +2168,12 @@ export default function Outbound() {
                           filteredPlItems.map((item, index) => {
                           const cleanedSo = cleanId(item.so);
                           const cleanedRpro = cleanId(item.rpro);
+                          const cleanedPlNo = cleanId(item.plNo);
                           
-                          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
+                          const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+                          const soKey = `${cleanedPlNo}|${cleanedSo}`;
+
+                          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
 
                           const diff = item.totalBoxes - scanCount;
                           let statusText = 'ok';

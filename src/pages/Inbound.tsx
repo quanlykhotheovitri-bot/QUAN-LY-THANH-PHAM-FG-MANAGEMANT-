@@ -61,6 +61,7 @@ export default function Inbound() {
   const [historySearch, setHistorySearch] = useState('');
   const historyPageSize = 50;
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const fetchLockRef = useRef(false);
 
   useEffect(() => {
     if (!hasMore || historyLoading || activeTab !== 'history') return;
@@ -269,105 +270,114 @@ export default function Inbound() {
   });
 
   async function fetchHistory(isNew = false) {
-    if (historyLoading) return;
+    if (historyLoading || fetchLockRef.current) return;
+    fetchLockRef.current = true;
     setHistoryLoading(true);
     setIsLoading(true);
     
-    if (isNew) {
-      setHistoryPage(1);
-      setHasMore(true);
-    }
-
-    const currentPage = isNew ? 1 : historyPage;
-    const from = (currentPage - 1) * historyPageSize;
-    const to = from + historyPageSize - 1;
-
-    let query = supabase
-      .from('inbound_transactions')
-      .select('*', { count: 'exact' });
-
-    if (historySearch.trim()) {
-      const search = historySearch.trim();
-      query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
-    }
-
-    const { data, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
-    } else if (data) {
-      if (data.length < historyPageSize) {
-        setHasMore(false);
-      }
-
-      // Calculate status for each SO/RPRO
-      const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
-      
-      const statusMap: Record<string, string> = { ...orderStatusMap };
-
-      if (uniqueSORPRO.length > 0) {
-        // Fetch all boxes for these SO/RPROs to check completeness
-        const { data: allRelated } = await supabase
-          .from('inbound_transactions')
-          .select('qr_code, so, rpro')
-          .or(uniqueSORPRO.map(key => {
-            const [so, rpro] = key.split('|');
-            return `and(so.eq."${so}",rpro.eq."${rpro}")`;
-          }).join(','));
-
-        uniqueSORPRO.forEach(key => {
-          const [so, rpro] = key.split('|');
-          const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
-          const itemInPage = data.find(d => d.so === so && d.rpro === rpro);
-          const total = itemInPage?.total_boxes || 0;
-          
-          if (total <= 0) {
-            statusMap[key] = 'Đủ đơn';
-            return;
-          }
-
-          const presentBoxes = new Set<number>();
-          relatedBoxes.forEach(b => {
-            const parsed = parseQRCode(b.qr_code);
-            presentBoxes.add(parsed.quantity); // quantity is boxNumber now
-          });
-
-          const missing = [];
-          for (let i = 1; i <= total; i++) {
-            if (!presentBoxes.has(i)) {
-              missing.push(i);
-            }
-          }
-
-          if (missing.length === 0) {
-            statusMap[key] = 'Đủ đơn';
-          } else {
-            statusMap[key] = `Thiếu thùng số ${missing.join(', ')}`;
-          }
-        });
-      }
-
-      setOrderStatusMap(statusMap);
-      const formattedData = data.map(item => ({
-        ...item,
-        so: item.so?.trim() || '',
-        rpro: item.rpro?.trim() || '',
-        qr_code: item.qr_code?.trim() || ''
-      }));
-
+    try {
       if (isNew) {
-        setHistoryData(formattedData);
-      } else {
-        setHistoryData(prev => [...prev, ...formattedData]);
+        setHistoryPage(1);
+        setHasMore(true);
       }
+
+      const currentPage = isNew ? 1 : historyPage;
+      const from = (currentPage - 1) * historyPageSize;
+      const to = from + historyPageSize - 1;
+
+      let query = supabase
+        .from('inbound_transactions')
+        .select('*', { count: 'exact' });
+
+      if (historySearch.trim()) {
+        const search = historySearch.trim();
+        query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+      }
+
+      const { data, count, error } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
       
-      if (count !== null) setHistoryTotal(count);
-      setHistoryPage(currentPage + 1);
+      if (error) {
+        setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
+      } else if (data) {
+        if (data.length < historyPageSize) {
+          setHasMore(false);
+        }
+
+        // Calculate status for each SO/RPRO
+        const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so}|${item.rpro}`)));
+        
+        const statusMap: Record<string, string> = { ...orderStatusMap };
+
+        if (uniqueSORPRO.length > 0) {
+          // Fetch all boxes for these SO/RPROs to check completeness
+          const { data: allRelated } = await supabase
+            .from('inbound_transactions')
+            .select('qr_code, so, rpro')
+            .or(uniqueSORPRO.map(key => {
+              const [so, rpro] = key.split('|');
+              return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+            }).join(','));
+
+          uniqueSORPRO.forEach(key => {
+            const [so, rpro] = key.split('|');
+            const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
+            const itemInPage = data.find(d => d.so === so && d.rpro === rpro);
+            const total = itemInPage?.total_boxes || 0;
+            
+            if (total <= 0) {
+              statusMap[key] = 'Đủ đơn';
+              return;
+            }
+
+            const presentBoxes = new Set<number>();
+            relatedBoxes.forEach(b => {
+              const parsed = parseQRCode(b.qr_code);
+              presentBoxes.add(parsed.quantity); // quantity is boxNumber now
+            });
+
+            const missing = [];
+            for (let i = 1; i <= total; i++) {
+              if (!presentBoxes.has(i)) {
+                missing.push(i);
+              }
+            }
+
+            if (missing.length === 0) {
+              statusMap[key] = 'Đủ đơn';
+            } else {
+              statusMap[key] = `Thiếu thùng số ${missing.join(', ')}`;
+            }
+          });
+        }
+
+        setOrderStatusMap(statusMap);
+        const formattedData = data.map(item => ({
+          ...item,
+          so: item.so?.trim() || '',
+          rpro: item.rpro?.trim() || '',
+          qr_code: item.qr_code?.trim() || ''
+        }));
+
+        if (isNew) {
+          setHistoryData(formattedData);
+        } else {
+          setHistoryData(prev => {
+            const existingIds = new Set(prev.map(item => item.id));
+            const uniqueNew = formattedData.filter(item => !existingIds.has(item.id));
+            return [...prev, ...uniqueNew];
+          });
+        }
+        
+        if (count !== null) setHistoryTotal(count);
+        setHistoryPage(currentPage + 1);
+      }
+    } finally {
+      setHistoryLoading(false);
+      setIsLoading(false);
+      fetchLockRef.current = false;
     }
-    setHistoryLoading(false);
-    setIsLoading(false);
   }
 
   async function fetchLocations() {

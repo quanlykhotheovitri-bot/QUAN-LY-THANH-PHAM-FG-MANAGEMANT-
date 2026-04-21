@@ -622,12 +622,27 @@ export default function Outbound() {
       let finalMapped: any[] = [];
       let foundSheet = false;
 
-      // Iterate through all sheets to find the valid one
-      for (const wsname of wb.SheetNames) {
+      // 1. Sort sheets to prioritize those naturally named or containing "DELIVERY"
+      const sortedSheetNames = [...wb.SheetNames].sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        if (aLower.includes('delivery') || aLower.includes('note')) return -1;
+        if (bLower.includes('delivery') || bLower.includes('note')) return 1;
+        return 0;
+      });
+
+      for (const wsname of sortedSheetNames) {
         const ws = wb.Sheets[wsname];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
         
         if (rows.length < 5) continue;
+
+        // Check if sheet content actually looks like a Delivery Note
+        const sheetStr = rows.slice(0, 15).map(r => r.join(' ')).join(' ').toLowerCase();
+        if (!sheetStr.includes('delivery note') && !sheetStr.includes('packing list') && wb.SheetNames.length > 1) {
+          // If there are other sheets, skip this one if it doesn't look like a delivery note
+          continue; 
+        }
 
         // 1. Find Table Headers first (Try Row 7, 8, 9 - Indices 6, 7, 8)
         const headerIndices = [6, 7, 8]; 
@@ -692,48 +707,59 @@ export default function Outbound() {
           }
 
           const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
+          
+          // Strict header mapping as requested
+          let soIdx = headers.findIndex(h => h === 'ovn order no' || h.includes('ovn order no'));
           const rproIdx = headers.indexOf('rpro');
-          const boxIdx = headers.findIndex(h => h.includes('total box') || h.includes('c/no'));
+          let boxIdx = headers.findIndex(h => h === 'total box' || h.includes('total box'));
           const qtyIdx = headers.indexOf('qty');
-          const soIdx = headers.findIndex(h => 
-            h.includes('order no') || h.includes('batch no') || h.includes('so no')
-          );
 
-          if (soIdx === -1 || qtyIdx === -1) {
-            continue; 
+          if (soIdx === -1 || qtyIdx === -1 || boxIdx === -1) {
+            // Fallback for slightly different naming but prioritize user's names
+            const fallbackSo = headers.findIndex(h => h.includes('order no') || h.includes('batch no'));
+            const fallbackBox = headers.findIndex(h => h.includes('box') || h.includes('c/no'));
+            
+            if (soIdx === -1) soIdx = fallbackSo;
+            if (boxIdx === -1) boxIdx = fallbackBox;
+            
+            if (soIdx === -1) continue; // Still not found
           }
 
           const mapped = [];
-          const seenSO = new Set<string>();
+          const seenInThisFile = new Set<string>();
           let currentPlNo = plNo;
           let currentCustomer = customer;
+          let emptyRowCount = 0;
 
           for (let i = tableHeaderRow + 1; i < rows.length; i++) {
             const row = rows[i];
-            if (!row) continue;
+            if (!row || row.every(cell => cell === null || cell === '')) {
+              emptyRowCount++;
+              if (emptyRowCount >= 3) break; // End of table
+              continue;
+            }
+            emptyRowCount = 0;
             
             const rowStr = row.map(c => String(c || '').trim()).join(' ');
             const rowStrLower = rowStr.toLowerCase();
 
-            // BREAK at the first 'Total' row we hit. No more rows should be processed for this table.
+            // ALWAYS BREAK at 'Total' row - Critical fix for duplication issues
             if (rowStrLower === 'total' || rowStrLower.startsWith('total ') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
                break; 
             }
 
-            // Check if we hit a footer marker
-            if (rowStrLower.includes('prepared by') || rowStrLower.includes('approved by')) {
-              break;
-            }
-
             const soValue = String(row[soIdx] || '').trim();
-            if (!soValue) continue;
+            if (!soValue || soValue === '') continue;
             
             const soUpper = soValue.toUpperCase();
             if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-') || soUpper.startsWith('OV-')) {
-              // Deduplicate within the same file to prevent multi-parse issues
-              const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
-              if (seenSO.has(compositeKey)) continue;
-              seenSO.add(compositeKey);
+              // Ensure we have a PL number associated, otherwise ignore random SOs outside tables
+              if (!currentPlNo) continue; 
+
+              const compositeKey = `${cleanId(currentPlNo)}|${cleanId(soValue)}|${rproIdx !== -1 ? cleanId(String(row[rproIdx] || '')) : ''}`;
+              
+              if (seenInThisFile.has(compositeKey)) continue;
+              seenInThisFile.add(compositeKey);
 
               mapped.push({
                 plNo: currentPlNo,
@@ -741,7 +767,7 @@ export default function Outbound() {
                 rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
                 kh: currentCustomer,
                 qty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
-                totalBoxes: boxIdx !== -1 ? (parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0) : 0,
+                totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
               });
             }
           }
@@ -855,19 +881,23 @@ export default function Outbound() {
                     }
 
                     const headers = rows[tableHeaderRow].map(h => String(h || '').trim().toLowerCase());
+                    
+                    // Strict header mapping as requested
+                    let soIdxMap = headers.findIndex(h => h === 'ovn order no' || h.includes('ovn order no'));
                     const rproIdx = headers.indexOf('rpro');
-                    const boxIdx = headers.findIndex(h => h.includes('total box') || h.includes('c/no'));
+                    let boxIdxMap = headers.findIndex(h => h === 'total box' || h.includes('total box'));
                     const qtyIdx = headers.indexOf('qty');
-                    const soIdx = headers.findIndex(h => 
-                      h.includes('order no') || h.includes('batch no') || h.includes('so no')
-                    );
 
-                    if (soIdx === -1 || qtyIdx === -1) {
-                      continue; 
+                    if (soIdxMap === -1 || qtyIdx === -1 || boxIdxMap === -1) {
+                      const fallbackSo = headers.findIndex(h => h.includes('order no') || h.includes('batch no'));
+                      const fallbackBox = headers.findIndex(h => h.includes('box') || h.includes('c/no'));
+                      if (soIdxMap === -1) soIdxMap = fallbackSo;
+                      if (boxIdxMap === -1) boxIdxMap = fallbackBox;
+                      if (soIdxMap === -1) continue;
                     }
 
                     const mapped = [];
-                    const seenSO = new Set<string>();
+                    const seenInThisFile = new Set<string>();
                     let currentPlNo = plNo;
                     let currentCustomer = customer;
 
@@ -878,23 +908,19 @@ export default function Outbound() {
                       const rowStr = row.map(c => String(c || '').trim()).join(' ');
                       const rowStrLower = rowStr.toLowerCase();
 
-                      // Robust break for total rows - STOP here to avoid orphan rows mislabeling
+                      // Robust break for total rows
                       if (rowStrLower === 'total' || rowStrLower.startsWith('total ') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
                          break;
                       }
 
-                      if (rowStrLower.includes('prepared by') || rowStrLower.includes('approved by')) {
-                        break;
-                      }
-
-                      const soValue = String(row[soIdx] || '').trim();
+                      const soValue = String(row[soIdxMap] || '').trim();
                       if (!soValue) continue;
                       
                       const soUpper = soValue.toUpperCase();
                       if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-') || soUpper.startsWith('OV-')) {
-                        const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
-                        if (seenSO.has(compositeKey)) continue;
-                        seenSO.add(compositeKey);
+                        const compositeKey = `${cleanId(currentPlNo)}|${cleanId(soValue)}|${rproIdx !== -1 ? cleanId(String(row[rproIdx] || '')) : ''}`;
+                        if (seenInThisFile.has(compositeKey)) continue;
+                        seenInThisFile.add(compositeKey);
 
                         mapped.push({
                           date: new Date().toISOString(),
@@ -902,7 +928,7 @@ export default function Outbound() {
                           rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
                           kh: currentCustomer,
                           plNo: currentPlNo,
-                          totalBoxes: boxIdx !== -1 ? (parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0) : 0,
+                          totalBoxes: parseInt(String(row[boxIdxMap] || '0').replace(/,/g, '')) || 0,
                           outQty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
                           status: 'ok',
                           note: '',

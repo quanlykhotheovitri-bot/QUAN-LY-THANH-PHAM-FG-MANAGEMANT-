@@ -632,6 +632,11 @@ export default function Outbound() {
       });
 
       for (const wsname of sortedSheetNames) {
+        // Skip hidden sheets - these are often where duplicate ERP data hides
+        const wsIdx = wb.SheetNames.indexOf(wsname);
+        const isHidden = wb.Workbook?.Sheets?.[wsIdx]?.Hidden !== 0 && wb.Workbook?.Sheets?.[wsIdx]?.Hidden !== undefined;
+        if (isHidden) continue;
+
         const ws = wb.Sheets[wsname];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
         
@@ -815,6 +820,11 @@ export default function Outbound() {
                 let foundInSheet = false;
 
                 for (const wsname of wb.SheetNames) {
+                  // Skip hidden sheets
+                  const wsIdx = wb.SheetNames.indexOf(wsname);
+                  const isHidden = wb.Workbook?.Sheets?.[wsIdx]?.Hidden !== 0 && wb.Workbook?.Sheets?.[wsIdx]?.Hidden !== undefined;
+                  if (isHidden) continue;
+
                   const ws = wb.Sheets[wsname];
                   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
                   

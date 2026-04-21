@@ -127,32 +127,34 @@ export default function Inbound() {
     setIsLoading(true);
     try {
       let allData: any[] = [];
-      let page = 0;
-      const pageSize = 2000;
+      let currentOffset = 0;
+      const pageSize = 1000;
       let finished = false;
-      const maxRows = 20000; // Limit to 20k rows for performance and as requested
+      const maxRows = 500000; // Increased limit to download "all data"
 
       while (!finished) {
         let query = supabase
           .from('inbound_transactions')
-          .select('*');
+          .select('*', { count: 'exact' });
 
         if (historySearch.trim()) {
           const search = historySearch.trim();
           query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
         }
 
-        const { data, error } = await query
+        const { data, count, error } = await query
           .order('created_at', { ascending: false })
-          .range(page * pageSize, (page + 1) * pageSize - 1);
+          .range(currentOffset, currentOffset + pageSize - 1);
 
         if (error) throw error;
         if (!data || data.length === 0) {
           finished = true;
         } else {
           allData = [...allData, ...data];
-          if (data.length < pageSize || allData.length >= maxRows) finished = true;
-          page++;
+          currentOffset += data.length;
+          const total = count || 0;
+          if (currentOffset >= total || allData.length >= maxRows) finished = true;
+          // Progress feedback could go here if needed
         }
       }
 
@@ -160,12 +162,18 @@ export default function Inbound() {
         allData = allData.slice(0, maxRows);
       }
 
-      // Fetch statuses for ALL unique SO/RPRO to make report accurate
-      const uniqueItems = Array.from(new Set(allData.map(item => `${item.so}|${item.rpro}`)));
+      // Deduplicate to avoid row shifting overlap during all-data fetch
+      const seenIdsExport = new Set();
+      allData = allData.filter(item => {
+        if (seenIdsExport.has(item.id)) return false;
+        seenIdsExport.add(item.id);
+        return true;
+      });
+
+      const uniqueItems = Array.from(new Set(allData.map(item => `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`)));
       const fullStatusMap: Record<string, string> = {};
 
-      // Process in chunks to avoid large query strings
-      const chunkSize = 100;
+      const chunkSize = 50;
       for (let i = 0; i < uniqueItems.length; i += chunkSize) {
         const chunk = uniqueItems.slice(i, i + chunkSize);
         const { data: allRelated } = await supabase
@@ -173,13 +181,13 @@ export default function Inbound() {
           .select('qr_code, so, rpro')
           .or(chunk.map(key => {
             const [so, rpro] = key.split('|');
-            return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+            return `and(so.eq."${so || ''}",rpro.eq."${rpro || ''}")`;
           }).join(','));
 
         chunk.forEach(key => {
           const [so, rpro] = key.split('|');
-          const relatedBoxes = allRelated?.filter(b => b.so === so && b.rpro === rpro) || [];
-          const itemExample = allData.find(d => d.so === so && d.rpro === rpro);
+          const relatedBoxes = allRelated?.filter(b => (b.so?.trim() || '') === so && (b.rpro?.trim() || '') === rpro) || [];
+          const itemExample = allData.find(d => (d.so?.trim() || '') === so && (d.rpro?.trim() || '') === rpro);
           const total = itemExample?.total_boxes || 0;
           
           if (total <= 0) {
@@ -199,24 +207,21 @@ export default function Inbound() {
         });
       }
 
-      // Result of filtering on client-side status if needed? 
-      // The user wants "all history" usually matching current filters.
-      let finalData = allData;
       if (statusFilter !== 'all') {
-        finalData = allData.filter(item => {
-          const status = fullStatusMap[`${item.so}|${item.rpro}`] || '';
+        allData = allData.filter(item => {
+          const status = fullStatusMap[`${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`] || '';
           if (statusFilter === 'complete') return status === 'Đủ đơn';
-          if (statusFilter === 'incomplete') return status !== '' && status !== 'Đủ đơn';
+          if (statusFilter === 'incomplete') return status !== '' && status !== 'Đủ đơn' && status !== 'Đang kiểm tra...';
           return true;
         });
       }
 
-      const data = finalData.map(item => ({
+      const data = allData.map(item => ({
         'QRCODE': item.qr_code,
         'SO': item.so,
         'RPRO': item.rpro,
         'KHÁCH HÀNG': item.kh || 'N/A',
-        'TÌNH TRẠNG': fullStatusMap[`${item.so}|${item.rpro}`] || '',
+        'TÌNH TRẠNG': fullStatusMap[`${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`] || 'N/A',
         'LOẠI THÙNG': item.box_type,
         'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
         'VỊ TRÍ': item.location_path,
@@ -297,11 +302,14 @@ export default function Inbound() {
           .range(currentOffset, currentOffset + currentFetchSize - 1);
 
         if (error) throw error;
-        if (data) {
+        
+        if (data && data.length > 0) {
           allFetchedData = [...allFetchedData, ...data];
           currentOffset += data.length;
           totalCount = count || 0;
-          if (data.length < currentFetchSize || currentOffset >= totalCount) {
+          
+          // Only stop if we actually ran out of data in the DB
+          if (currentOffset >= totalCount) {
             hasMoreChunks = false;
           }
         } else {
@@ -309,11 +317,21 @@ export default function Inbound() {
         }
       }
 
-      const data = allFetchedData;
+      // Deduplicate to avoid React key errors if rows shifted during chunked fetch
+      const seenIds = new Set();
+      const uniqueFetchedData = [];
+      for (const item of allFetchedData) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          uniqueFetchedData.push(item);
+        }
+      }
+      
+      const data = uniqueFetchedData;
       setHistoryTotal(totalCount);
       setHasMore(totalCount > targetPage * historyPageSize);
 
-        const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so || ''}|${item.rpro || ''}`)));
+        const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`)));
         const statusMap: Record<string, string> = { ...orderStatusMap };
 
         if (uniqueSORPRO.length > 0) {
@@ -325,14 +343,14 @@ export default function Inbound() {
               .select('qr_code, so, rpro')
               .or(chunk.map(key => {
                 const [so, rpro] = key.split('|');
-                return `and(so.eq."${so}",rpro.eq."${rpro}")`;
+                return `and(so.eq."${so || ''}",rpro.eq."${rpro || ''}")`;
               }).join(','));
 
             if (!relError && allRelated) {
               chunk.forEach(key => {
                 const [so, rpro] = key.split('|');
-                const relatedBoxes = allRelated.filter(b => b.so === so && b.rpro === rpro);
-                const itemInPage = data.find(d => (d.so || '') === (so || '') && (d.rpro || '') === (rpro || ''));
+                const relatedBoxes = allRelated.filter(b => (b.so?.trim() || '') === (so || '') && (b.rpro?.trim() || '') === (rpro || ''));
+                const itemInPage = data.find(d => (d.so?.trim() || '') === (so || '') && (d.rpro?.trim() || '') === (rpro || ''));
                 const total = itemInPage?.total_boxes || 0;
                 
                 if (total <= 0) {

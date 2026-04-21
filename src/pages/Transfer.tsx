@@ -319,8 +319,18 @@ export default function Transfer() {
       }
 
       setMessage({ type: 'success', text: `Đã chuyển vị trí thành công ${itemsToProcess.length} kiện hàng.` });
-      setScannedItems([]);
-      setSelectedScanned(new Set());
+      
+      // Keep items that were not processed (e.g. Wrong status or no location)
+      const processedQrCodes = new Set(itemsToProcess.map(i => i.qrCode));
+      setScannedItems(prev => prev.filter(item => !processedQrCodes.has(item.qrCode)));
+      
+      // Update selections to remove processed items
+      setSelectedScanned(prev => {
+        const next = new Set(prev);
+        processedQrCodes.forEach(qr => next.delete(qr));
+        return next;
+      });
+
       setScannedPage(1);
       clearAppCache();
     } catch (error: any) {

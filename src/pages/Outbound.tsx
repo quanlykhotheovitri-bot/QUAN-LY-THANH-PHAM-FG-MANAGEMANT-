@@ -1547,11 +1547,11 @@ export default function Outbound() {
     const renderTable = (items: any[], titleSuffix: string = "") => {
       if (items.length === 0) return "";
       
-      // Ensure items are sorted by location A-Z, then by PL No A-Z
+      // Ensure items are sorted by PL No A-Z, then by Location A-Z
       const sortedItems = [...items].sort((a, b) => {
-        const locCompare = (a.location || '').localeCompare(b.location || '');
-        if (locCompare !== 0) return locCompare;
-        return (a.plNo || '').localeCompare(b.plNo || '');
+        const plCompare = (a.plNo || '').localeCompare(b.plNo || '');
+        if (plCompare !== 0) return plCompare;
+        return (a.location || '').localeCompare(b.location || '');
       });
 
       return `

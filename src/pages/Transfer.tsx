@@ -360,17 +360,17 @@ export default function Transfer() {
           const payload = {
             device_info: `Transfer Tab Import - ${authUser?.email || 'System'}`,
             items: chunk.map(item => ({
-              qr_code: item.qrCode,
+              qrCode: item.qrCode,
               so: item.so,
               rpro: item.rpro,
               kh: item.kh,
               quantity: item.quantity,
-              total_boxes: item.totalBoxes,
-              location_path: item.toLocation || locationInput,
-              box_type: item.boxType || 'N/A'
+              totalBoxes: item.totalBoxes,
+              locationPath: item.toLocation || locationInput,
+              boxType: item.boxType || 'N/A'
             }))
           };
-          const { error: inboundError } = await supabase.rpc('process_inbound_v1', { p_data: payload });
+          const { error: inboundError } = await supabase.rpc('process_inbound_v5', { p_data: payload });
           if (inboundError) throw inboundError;
         }
       }
@@ -419,17 +419,17 @@ export default function Transfer() {
         const payload = {
           device_info: `Transfer Tab Force Import - ${authUser?.email || 'System'}`,
           items: chunk.map(item => ({
-            qr_code: item.qrCode,
+            qrCode: item.qrCode,
             so: item.so,
             rpro: item.rpro,
             kh: 'N/A',
             quantity: item.quantity,
-            total_boxes: item.totalBoxes || 0,
-            location_path: item.toLocation || targetLocation,
-            box_type: item.boxType || 'N/A'
+            totalBoxes: item.totalBoxes || 0,
+            locationPath: item.toLocation || targetLocation,
+            boxType: item.boxType || 'N/A'
           }))
         };
-        const { error: inboundError } = await supabase.rpc('process_inbound_v1', { p_data: payload });
+        const { error: inboundError } = await supabase.rpc('process_inbound_v5', { p_data: payload });
         if (inboundError) throw inboundError;
       }
 

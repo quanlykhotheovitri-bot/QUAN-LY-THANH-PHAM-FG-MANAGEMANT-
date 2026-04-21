@@ -341,46 +341,59 @@ export default function Inbound() {
       const targetPage = pageOverride !== undefined ? pageOverride : (isNew ? 1 : historyPage);
       const startRange = (targetPage - 1) * historyPageSize;
       
-      let allFetchedData: any[] = [];
-      let totalCount = 0;
-      let currentOffset = startRange;
-      const CHUNK_SIZE = 5000;
-      let hasMoreChunks = true;
+      // Step 1: Get total count first to know how many chunks to fetch in parallel
+      let query = supabase
+        .from('inbound_transactions')
+        .select('*', { count: 'exact', head: true });
 
-      while (allFetchedData.length < historyPageSize && hasMoreChunks) {
-        let query = supabase
+      if (historySearch.trim()) {
+        const search = historySearch.trim();
+        query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+      }
+
+      const { count } = await query;
+      const totalCount = count || 0;
+      setHistoryTotal(totalCount);
+      setHasMore(totalCount > targetPage * historyPageSize);
+
+      if (totalCount === 0) {
+        setHistoryData([]);
+        setHistoryLoading(false);
+        setIsLoading(false);
+        fetchLockRef.current = false;
+        return;
+      }
+
+      // Step 2: Fetch data in parallel chunks for maximum speed
+      const CHUNK_SIZE = 2500;
+      const totalNeeded = Math.min(historyPageSize, totalCount - startRange);
+      const numChunks = Math.ceil(totalNeeded / CHUNK_SIZE);
+      const fetchPromises = [];
+
+      for (let i = 0; i < numChunks; i++) {
+        const offset = startRange + (i * CHUNK_SIZE);
+        const limit = Math.min(CHUNK_SIZE, totalNeeded - (i * CHUNK_SIZE));
+        
+        let chunkQuery = supabase
           .from('inbound_transactions')
-          .select('*', { count: 'exact' });
+          .select('*');
 
         if (historySearch.trim()) {
           const search = historySearch.trim();
-          query = query.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
+          chunkQuery = chunkQuery.or(`so.ilike.%${search}%,rpro.ilike.%${search}%,kh.ilike.%${search}%,qr_code.ilike.%${search}%`);
         }
 
-        const remainingToFetch = historyPageSize - allFetchedData.length;
-        const currentFetchSize = Math.min(CHUNK_SIZE, remainingToFetch);
-        
-        const { data, count, error } = await query
-          .order('created_at', { ascending: false })
-          .range(currentOffset, currentOffset + currentFetchSize - 1);
-
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          allFetchedData = [...allFetchedData, ...data];
-          currentOffset += data.length;
-          totalCount = count || 0;
-          
-          // Only stop if we actually ran out of data in the DB
-          if (currentOffset >= totalCount) {
-            hasMoreChunks = false;
-          }
-        } else {
-          hasMoreChunks = false;
-        }
+        fetchPromises.push(
+          chunkQuery
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1)
+        );
       }
 
-      // Deduplicate to avoid React key errors if rows shifted during chunked fetch
+      const results = await Promise.all(fetchPromises);
+      const allFetchedData = results.flatMap(r => r.data || []);
+
+      // Deduplicate to avoid React key errors
       const seenIds = new Set();
       const uniqueFetchedData = [];
       for (const item of allFetchedData) {
@@ -391,23 +404,37 @@ export default function Inbound() {
       }
       
       const data = uniqueFetchedData;
-      setHistoryTotal(totalCount);
-      setHasMore(totalCount > targetPage * historyPageSize);
 
+      // Step 3: RENDER IMMEDIATELY so the user sees the data right away
+      const formattedData = data.map(item => ({
+        ...item,
+        so: item.so?.trim() || '',
+        rpro: item.rpro?.trim() || '',
+        qr_code: item.qr_code?.trim() || ''
+      }));
+
+      setHistoryData(formattedData);
+      if (isNew) setHistoryPage(1);
+      
+      // Stop the global loader, keep historyLoading true while calculating statuses if needed
+      // But actually, we want the UI to be responsive now.
+      setHistoryLoading(false);
+      setIsLoading(false);
+
+      // Step 4: Calculate statuses in background so it doesn't block the UI
       const uniqueSORPRO = Array.from(new Set(data.map(item => `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`)));
       const statusMap: Record<string, string> = { ...orderStatusMap };
 
       if (uniqueSORPRO.length > 0) {
-        // Create an index for faster lookup of item data
         const itemLookup: Record<string, any> = {};
         data.forEach(item => {
           const key = `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`;
           if (!itemLookup[key]) itemLookup[key] = item;
         });
 
-        // OPTIMIZATION: If we already have almost all data in memory, check in-memory first
+        // Optimization for complete local datasets
         const inMemoryBoxMap: Record<string, Set<number>> = {};
-        if (data.length >= totalCount) {
+        if (data.length >= totalCount && !historySearch.trim()) {
           data.forEach(item => {
             const key = `${item.so?.trim() || ''}|${item.rpro?.trim() || ''}`;
             if (!inMemoryBoxMap[key]) inMemoryBoxMap[key] = new Set();
@@ -416,24 +443,22 @@ export default function Inbound() {
           });
         }
 
-        const chunkSize = 100; // Larger chunks for fewer queries
-        for (let i = 0; i < uniqueSORPRO.length; i += chunkSize) {
-          const chunk = uniqueSORPRO.slice(i, i + chunkSize);
+        const statusChunkSize = 50; 
+        for (let i = 0; i < uniqueSORPRO.length; i += statusChunkSize) {
+          const chunk = uniqueSORPRO.slice(i, i + statusChunkSize);
           
           let boxesForChunk: any[] = [];
-          
-          // Use in-memory if complete, otherwise query DB
-          if (data.length >= totalCount) {
-            // Logic handled below using inMemoryBoxMap
+          if (data.length >= totalCount && !historySearch.trim()) {
+            // Already handled via inMemoryBoxMap
           } else {
-            const { data: allRelated, error: relError } = await supabase
+            const { data: allRelated } = await supabase
               .from('inbound_transactions')
               .select('qr_code, so, rpro')
               .or(chunk.map(key => {
                 const [so, rpro] = key.split('|');
                 return `and(so.eq."${so || ''}",rpro.eq."${rpro || ''}")`;
               }).join(','));
-            if (!relError && allRelated) boxesForChunk = allRelated;
+            if (allRelated) boxesForChunk = allRelated;
           }
 
           chunk.forEach(key => {
@@ -445,16 +470,14 @@ export default function Inbound() {
               statusMap[key] = 'Đủ đơn';
             } else {
               const presentBoxes = new Set<number>();
-              
-              if (data.length >= totalCount) {
-                const boxes = inMemoryBoxMap[key] || new Set();
-                boxes.forEach(b => presentBoxes.add(b));
+              if (data.length >= totalCount && !historySearch.trim()) {
+                (inMemoryBoxMap[key] || new Set()).forEach(b => presentBoxes.add(b));
               } else {
-                const relatedBoxes = boxesForChunk.filter(b => (b.so?.trim() || '') === so && (b.rpro?.trim() || '') === rpro);
-                relatedBoxes.forEach(b => {
-                  const parsed = parseQRCode(b.qr_code);
-                  presentBoxes.add(parsed.quantity);
-                });
+                boxesForChunk.filter(b => (b.so?.trim() || '') === so && (b.rpro?.trim() || '') === rpro)
+                  .forEach(b => {
+                    const parsed = parseQRCode(b.qr_code);
+                    presentBoxes.add(parsed.quantity);
+                  });
               }
 
               const missing = [];
@@ -465,21 +488,12 @@ export default function Inbound() {
             }
           });
 
-          // Refresh status map in batches to avoid overwhelming the UI
-          if (i % 500 === 0) setOrderStatusMap({ ...statusMap });
+          // Sync state incrementally for responsiveness
+          setOrderStatusMap({ ...statusMap });
+          // Short delay to let the UI breathe
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
-        // Final update
-        setOrderStatusMap({ ...statusMap });
       }
-      const formattedData = data.map(item => ({
-        ...item,
-        so: item.so?.trim() || '',
-        rpro: item.rpro?.trim() || '',
-        qr_code: item.qr_code?.trim() || ''
-      }));
-
-      setHistoryData(formattedData);
-      if (isNew) setHistoryPage(1);
     } catch (err: any) {
       setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + err.message });
     } finally {

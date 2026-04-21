@@ -59,7 +59,7 @@ export default function Inbound() {
   const [orderStatusMap, setOrderStatusMap] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
   const [historySearch, setHistorySearch] = useState('');
-  const historyPageSize = 50;
+  const [historyPageSize, setHistoryPageSize] = useState(500);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchLockRef = useRef(false);
 
@@ -119,13 +119,14 @@ export default function Inbound() {
     const dataToExport = filteredHistory;
     const data = dataToExport.map(item => ({
       'QRCODE': item.qr_code,
-      'DATE': formatDate(item.created_at),
-      'OVN Order No': item.so,
+      'SO': item.so,
       'RPRO': item.rpro,
+      'KHÁCH HÀNG': item.kh || 'N/A',
       'TÌNH TRẠNG': orderStatusMap[`${item.so}|${item.rpro}`] || '',
       'LOẠI THÙNG': item.box_type,
       'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
       'VỊ TRÍ': item.location_path,
+      'NGÀY NHẬP': formatDate(item.created_at),
       'NGƯỜI NHẬP': item.user_email
     }));
 
@@ -140,8 +141,9 @@ export default function Inbound() {
     try {
       let allData: any[] = [];
       let page = 0;
-      const pageSize = 1000;
+      const pageSize = 2000;
       let finished = false;
+      const maxRows = 20000; // Limit to 20k rows for performance and as requested
 
       while (!finished) {
         let query = supabase
@@ -162,9 +164,13 @@ export default function Inbound() {
           finished = true;
         } else {
           allData = [...allData, ...data];
-          if (data.length < pageSize) finished = true;
+          if (data.length < pageSize || allData.length >= maxRows) finished = true;
           page++;
         }
+      }
+
+      if (allData.length > maxRows) {
+        allData = allData.slice(0, maxRows);
       }
 
       // Fetch statuses for ALL unique SO/RPRO to make report accurate
@@ -220,13 +226,14 @@ export default function Inbound() {
 
       const data = finalData.map(item => ({
         'QRCODE': item.qr_code,
-        'DATE': formatDate(item.created_at),
-        'OVN Order No': item.so,
+        'SO': item.so,
         'RPRO': item.rpro,
+        'KHÁCH HÀNG': item.kh || 'N/A',
         'TÌNH TRẠNG': fullStatusMap[`${item.so}|${item.rpro}`] || '',
         'LOẠI THÙNG': item.box_type,
         'SỐ THÙNG ĐƠN HÀNG': item.total_boxes > 0 ? `${item.quantity} / ${item.total_boxes}` : item.quantity,
         'VỊ TRÍ': item.location_path,
+        'NGÀY NHẬP': formatDate(item.created_at),
         'NGƯỜI NHẬP': item.user_email
       }));
 
@@ -269,7 +276,7 @@ export default function Inbound() {
     return true;
   });
 
-  async function fetchHistory(isNew = false) {
+  async function fetchHistory(isNew = false, fetchAll = false) {
     if (historyLoading || fetchLockRef.current) return;
     fetchLockRef.current = true;
     setHistoryLoading(true);
@@ -282,8 +289,9 @@ export default function Inbound() {
       }
 
       const currentPage = isNew ? 1 : historyPage;
-      const from = (currentPage - 1) * historyPageSize;
-      const to = from + historyPageSize - 1;
+      const pageSize = fetchAll ? 20000 : (statusFilter !== 'all' ? 2000 : historyPageSize);
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
 
       let query = supabase
         .from('inbound_transactions')
@@ -301,7 +309,7 @@ export default function Inbound() {
       if (error) {
         setMessage({ type: 'error', text: 'Lỗi khi tải lịch sử: ' + error.message });
       } else if (data) {
-        if (data.length < historyPageSize) {
+        if (data.length < pageSize || fetchAll || historyData.length + data.length >= 20000) {
           setHasMore(false);
         }
 
@@ -1260,7 +1268,7 @@ export default function Inbound() {
                       {isAdmin && (
                         <input 
                           type="checkbox" 
-                          checked={selectedHistory.size === historyData.length && historyData.length > 0}
+                          checked={selectedHistory.size === filteredHistory.length && filteredHistory.length > 0}
                           onChange={toggleSelectAllHistory}
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
@@ -1269,6 +1277,7 @@ export default function Inbound() {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">QRCODE</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">SO</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">RPRO</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap sm:table-cell hidden">KHÁCH HÀNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">TÌNH TRẠNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">LOẠI THÙNG</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border-b border-r border-slate-300 text-center whitespace-nowrap">SỐ THÙNG ĐƠN HÀNG</th>
@@ -1293,6 +1302,7 @@ export default function Inbound() {
                       <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 font-medium text-slate-700">{item.qr_code}</td>
                       <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.so}</td>
                       <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center">{item.rpro}</td>
+                      <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center sm:table-cell hidden">{item.kh || 'N/A'}</td>
                       <td className="px-4 py-3 text-[11px] border-b border-r border-slate-200 text-center font-medium text-slate-600">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           orderStatusMap[`${item.so}|${item.rpro}`] === 'Đủ đơn' 
@@ -1410,13 +1420,22 @@ export default function Inbound() {
                 Đang hiển thị {filteredHistory.length} / {historyTotal} bản ghi
               </div>
               {hasMore && (
-                <button
-                  onClick={() => fetchHistory()}
-                  disabled={historyLoading}
-                  className="px-6 py-2 bg-[#002060] text-white rounded-xl text-xs font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all"
-                >
-                  {historyLoading ? 'ĐANG TẢI...' : 'XEM THÊM'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => fetchHistory()}
+                    disabled={historyLoading}
+                    className="px-6 py-2 bg-[#002060] text-white rounded-xl text-xs font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all uppercase"
+                  >
+                    {historyLoading ? 'ĐANG TẢI...' : 'XEM THÊM'}
+                  </button>
+                  <button
+                    onClick={() => fetchHistory(false, true)}
+                    disabled={historyLoading}
+                    className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black shadow-lg hover:opacity-90 disabled:opacity-50 transition-all uppercase whitespace-nowrap"
+                  >
+                    TẢI TOÀN BỘ (20K)
+                  </button>
+                </div>
               )}
               <div ref={loadMoreRef} className="h-1" />
             </div>

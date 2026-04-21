@@ -641,22 +641,28 @@ export default function Outbound() {
             if (plNo) break;
           }
 
-          // 2. Find Customer info by scanning top rows (indices 2 to 7)
+          // 2. Find Customer info by scanning top rows (indices 2 to 10)
           let customer = '';
-          for (let r = 2; r <= 7; r++) {
+          for (let r = 2; r <= 10; r++) {
             const row = rows[r] || [];
             const rowString = row.map(c => String(c || '').trim()).join(' ');
             if (rowString.toLowerCase().includes('customer:')) {
               const parts = rowString.split(/customer:/i);
               if (parts[1]) {
-                // Remove trailing labels that might be in the same row
+                // Split by labels that might be on the same row in Excel
                 customer = parts[1]
                   .split(/erp/i)[0]
                   .split(/delivery/i)[0]
                   .split(/date/i)[0]
                   .split(/address/i)[0]
+                  .split(/pl-/i)[0]
+                  .split(/\d{2}-/)[0] // Split by delivery note numbers like 02-
                   .trim();
                 if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+                // If there's an address label later in the rowString, cut it off
+                if (customer.toLowerCase().includes('address:')) {
+                  customer = customer.split(/address:/i)[0].trim();
+                }
                 if (customer) break;
               }
             }
@@ -668,20 +674,58 @@ export default function Outbound() {
           const qtyIdx = headers.indexOf('qty');
 
           const mapped = [];
+          const seenSO = new Set<string>();
+          let currentPlNo = plNo;
+          let currentCustomer = customer;
+
           for (let i = tableHeaderRow + 1; i < rows.length; i++) {
             const row = rows[i];
-            if (!row || !row[soIdx]) continue;
+            if (!row) continue;
             
-            const soValue = String(row[soIdx]).trim();
-            if (soValue.toLowerCase() === 'total') break; // Stop at total row
+            const rowStr = row.map(c => String(c || '').trim()).join(' ');
+            const rowStrLower = rowStr.toLowerCase();
 
+            // Break if we hit a Total row (check entire row)
+            if (rowStrLower.startsWith('total') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
+               // If there's another table below, we might want to continue, but usually we just want the first one
+               // or we should update PL No if it changes.
+               // For safety with current structure, let's break if we hit a final total.
+               if (rowStrLower.includes('grand total') || rowStrLower.includes('total:')) break;
+            }
+
+            // Dynamically update PL No if we find a new one in a row
+            if (rowStr.toUpperCase().includes('PL-')) {
+              const match = rowStr.match(/PL-[\w-]+/i);
+              if (match) currentPlNo = match[0];
+            }
+
+            // Dynamically update Customer if a new one is found (for multi-PL sheets)
+            if (rowStrLower.includes('customer:')) {
+              const parts = rowStr.split(/customer:/i);
+              if (parts[1]) {
+                currentCustomer = parts[1]
+                  .split(/erp/i)[0]
+                  .split(/delivery/i)[0]
+                  .split(/pl-/i)[0]
+                  .trim();
+              }
+            }
+
+            const soValue = String(row[soIdx] || '').trim();
+            if (!soValue) continue;
+            
             const soUpper = soValue.toUpperCase();
             if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
+              // Deduplicate within the same file to prevent multi-parse issues
+              const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
+              if (seenSO.has(compositeKey)) continue;
+              seenSO.add(compositeKey);
+
               mapped.push({
-                plNo: plNo,
+                plNo: currentPlNo,
                 so: soValue,
                 rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
-                kh: customer,
+                kh: currentCustomer,
                 qty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
                 totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
               });
@@ -771,9 +815,9 @@ export default function Outbound() {
                       if (plNo) break;
                     }
 
-                    // 2. Find Customer info by scanning top rows (indices 2 to 7)
+                    // 2. Find Customer info by scanning top rows (indices 2 to 10)
                     let customer = '';
-                    for (let r = 2; r <= 7; r++) {
+                    for (let r = 2; r <= 10; r++) {
                       const row = rows[r] || [];
                       const rowString = row.map(c => String(c || '').trim()).join(' ');
                       if (rowString.toLowerCase().includes('customer:')) {
@@ -784,8 +828,13 @@ export default function Outbound() {
                             .split(/delivery/i)[0]
                             .split(/date/i)[0]
                             .split(/address/i)[0]
+                            .split(/pl-/i)[0]
+                            .split(/\d{2}-/)[0]
                             .trim();
                           if (customer.endsWith(',')) customer = customer.slice(0, -1).trim();
+                          if (customer.toLowerCase().includes('address:')) {
+                            customer = customer.split(/address:/i)[0].trim();
+                          }
                           if (customer) break;
                         }
                       }
@@ -797,21 +846,55 @@ export default function Outbound() {
                     const qtyIdx = headers.indexOf('qty');
 
                     const mapped = [];
+                    const seenSO = new Set<string>();
+                    let currentPlNo = plNo;
+                    let currentCustomer = customer;
+
                     for (let j = tableHeaderRow + 1; j < rows.length; j++) {
                       const row = rows[j];
-                      if (!row || !row[soIdx]) continue;
+                      if (!row) continue;
                       
-                      const soValue = String(row[soIdx]).trim();
-                      if (soValue.toLowerCase() === 'total') break;
+                      const rowStr = row.map(c => String(c || '').trim()).join(' ');
+                      const rowStrLower = rowStr.toLowerCase();
 
+                      // Robust break for total rows
+                      if (rowStrLower.startsWith('total') || (rowStrLower.includes('total') && (rowStrLower.includes('qty') || rowStrLower.includes('box')))) {
+                         if (rowStrLower.includes('grand total') || rowStrLower.includes('total:')) break;
+                      }
+
+                      // Dynamic PL No update
+                      if (rowStr.toUpperCase().includes('PL-')) {
+                        const match = rowStr.match(/PL-[\w-]+/i);
+                        if (match) currentPlNo = match[0];
+                      }
+
+                      // Dynamic Customer update
+                      if (rowStrLower.includes('customer:')) {
+                        const parts = rowStr.split(/customer:/i);
+                        if (parts[1]) {
+                          currentCustomer = parts[1]
+                            .split(/erp/i)[0]
+                            .split(/delivery/i)[0]
+                            .split(/pl-/i)[0]
+                            .trim();
+                        }
+                      }
+
+                      const soValue = String(row[soIdx] || '').trim();
+                      if (!soValue) continue;
+                      
                       const soUpper = soValue.toUpperCase();
                       if (soUpper.startsWith('SO-') || soUpper.startsWith('SLT-') || soUpper.startsWith('CSUP-')) {
+                        const compositeKey = `${currentPlNo}|${soValue}|${rproIdx !== -1 ? String(row[rproIdx] || '').trim() : ''}`;
+                        if (seenSO.has(compositeKey)) continue;
+                        seenSO.add(compositeKey);
+
                         mapped.push({
                           date: new Date().toISOString(),
                           so: soValue,
                           rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
-                          kh: customer,
-                          plNo: plNo,
+                          kh: currentCustomer,
+                          plNo: currentPlNo,
                           totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,
                           outQty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
                           status: 'ok',

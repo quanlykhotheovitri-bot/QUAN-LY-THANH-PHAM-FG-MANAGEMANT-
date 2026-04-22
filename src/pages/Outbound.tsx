@@ -155,7 +155,8 @@ export default function Outbound() {
       result = result.filter(item => 
         (item.so?.toLowerCase().includes(searchLower)) || 
         (item.rpro?.toLowerCase().includes(searchLower)) ||
-        (item.kh?.toLowerCase().includes(searchLower))
+        (item.kh?.toLowerCase().includes(searchLower)) ||
+        (item.plNo?.toLowerCase().includes(searchLower))
       );
     }
     
@@ -388,7 +389,7 @@ export default function Outbound() {
         .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
 
       if (outboundSearch.trim()) {
-        query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%`);
+        query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%,pl_no.ilike.%${outboundSearch.trim()}%`);
       }
 
       if (startDate) {
@@ -1120,7 +1121,7 @@ export default function Outbound() {
       .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
 
     if (outboundSearch.trim()) {
-      query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%`);
+      query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%,pl_no.ilike.%${outboundSearch.trim()}%`);
     }
 
     if (startDate) {
@@ -1961,6 +1962,17 @@ export default function Outbound() {
                         ))
                       )}
                     </tbody>
+                    {filteredScannedItems.length > 0 && (
+                      <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
+                        <tr>
+                          <td colSpan={7} className="px-4 py-3 border border-slate-200 text-right text-[11px] uppercase tracking-wider font-bold">Tổng cộng:</td>
+                          <td className="px-4 py-3 border border-slate-200 text-[11px] text-center text-blue-700 font-extrabold">
+                            {filteredScannedItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
+                          </td>
+                          <td colSpan={2} className="px-4 py-3 border border-slate-200"></td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
 
@@ -2344,16 +2356,21 @@ export default function Outbound() {
                         })
                       )}
                       </tbody>
-                      {plItems.length > 0 && (
+                      {filteredPlItems.length > 0 && (
                         <tfoot className="bg-slate-50 font-bold sticky bottom-0 z-10 border-t-2 border-slate-200">
                           <tr>
                             <td colSpan={5} className="px-4 py-4 border border-slate-200 text-right text-sm uppercase tracking-wider">Tổng cộng:</td>
                             <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
-                              {plItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
+                              {filteredPlItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
                             </td>
                             <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
-                              {plItems.reduce((sum, item) => {
-                                const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+                              {filteredPlItems.reduce((sum, item) => {
+                                const cleanedSo = cleanId(item.so);
+                                const cleanedRpro = cleanId(item.rpro);
+                                const cleanedPlNo = cleanId(item.plNo);
+                                const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+                                const soKey = `${cleanedPlNo}|${cleanedSo}`;
+                                const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
                                 return sum + scanCount;
                               }, 0)}
                             </td>

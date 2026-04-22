@@ -1559,7 +1559,7 @@ export default function Outbound() {
         : item.rpro 
           ? plItemStats.rproInv.get(item.rpro) 
           : plItemStats.soInv.get(item.so);
-      const location = invMatch ? invMatch.location_path : 'N/A';
+      const location = invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A';
       const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
       
       plGroups.get(plNo)?.push({

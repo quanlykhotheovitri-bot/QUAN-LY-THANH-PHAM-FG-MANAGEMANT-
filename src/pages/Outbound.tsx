@@ -270,6 +270,30 @@ export default function Outbound() {
     return result;
   }, [plItems, plSearch, plStatusFilter, plItemStats, selectedPlNoFilter]);
 
+  const plTableTotals = useMemo(() => {
+    return filteredPlItems.reduce((acc, item) => {
+      const cleanedSo = cleanId(item.so);
+      const cleanedRpro = cleanId(item.rpro);
+      const cleanedPlNo = cleanId(item.plNo);
+      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+      const soKey = `${cleanedPlNo}|${cleanedSo}`;
+      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+      
+      return {
+        totalBoxes: acc.totalBoxes + (Number(item.totalBoxes) || 0),
+        scanCount: acc.scanCount + scanCount
+      };
+    }, { totalBoxes: 0, scanCount: 0 });
+  }, [filteredPlItems, plItemStats]);
+
+  const scanTableTotals = useMemo(() => {
+    return filteredScannedItems.reduce((acc, item) => {
+      return {
+        totalBoxes: acc.totalBoxes + (Number(item.totalBoxes) || 0)
+      };
+    }, { totalBoxes: 0 });
+  }, [filteredScannedItems]);
+
   const filteredOutbound = useMemo(() => {
     let result = outboundData;
     
@@ -1967,7 +1991,7 @@ export default function Outbound() {
                         <tr>
                           <td colSpan={7} className="px-4 py-3 border border-slate-200 text-right text-[11px] uppercase tracking-wider font-bold">Tổng cộng:</td>
                           <td className="px-4 py-3 border border-slate-200 text-[11px] text-center text-blue-700 font-extrabold">
-                            {filteredScannedItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
+                            {scanTableTotals.totalBoxes}
                           </td>
                           <td colSpan={2} className="px-4 py-3 border border-slate-200"></td>
                         </tr>
@@ -2174,7 +2198,7 @@ export default function Outbound() {
                   {plItems.length > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-400 mr-2">
-                        {filteredPlItems.length} dòng ({filteredPlItems.reduce((acc, item) => acc + (item.totalBoxes || 0), 0)} thùng)
+                        {filteredPlItems.length} dòng ({plTableTotals.totalBoxes} thùng)
                       </span>
                       <button 
                         onClick={() => exportCurrentPL('xlsx')}
@@ -2361,18 +2385,10 @@ export default function Outbound() {
                           <tr>
                             <td colSpan={5} className="px-4 py-4 border border-slate-200 text-right text-sm uppercase tracking-wider">Tổng cộng:</td>
                             <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
-                              {filteredPlItems.reduce((sum, item) => sum + (item.totalBoxes || 0), 0)}
+                              {plTableTotals.totalBoxes}
                             </td>
                             <td className="px-4 py-4 border border-slate-200 text-sm text-center text-blue-700">
-                              {filteredPlItems.reduce((sum, item) => {
-                                const cleanedSo = cleanId(item.so);
-                                const cleanedRpro = cleanId(item.rpro);
-                                const cleanedPlNo = cleanId(item.plNo);
-                                const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-                                const soKey = `${cleanedPlNo}|${cleanedSo}`;
-                                const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
-                                return sum + scanCount;
-                              }, 0)}
+                              {plTableTotals.scanCount}
                             </td>
                             <td colSpan={3} className="px-4 py-4 border border-slate-200"></td>
                           </tr>

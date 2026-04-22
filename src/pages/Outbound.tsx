@@ -660,33 +660,38 @@ export default function Outbound() {
     setLoading(true);
     setIsLoading(true);
     try {
-      // Insert into outbound_transactions (Data xuất)
-      const { error: txError } = await supabase.from('outbound_transactions').insert(
-        unsavedItems.map(item => ({
-          type: 'SCAN',
-          qr_code: item.qrCode,
-          so: item.so,
-          rpro: item.rpro,
-          kh: item.kh,
-          pl_no: item.plNo,
-          quantity: item.outQty,
-          location_path: item.locationPath,
-          status: item.status === 'OK' ? 'completed' : 'warning',
-          note: item.note,
-          device_info: navigator.userAgent
-        }))
-      );
+      // Chunking for large datasets to avoid Supabase batch size limits
+      const chunkSize = 200;
+      const itemsToInsert = unsavedItems.map(item => ({
+        type: 'SCAN',
+        qr_code: item.qrCode,
+        so: item.so,
+        rpro: item.rpro,
+        kh: item.kh,
+        pl_no: item.plNo,
+        quantity: item.outQty,
+        location_path: item.locationPath,
+        status: item.status === 'OK' ? 'completed' : 'warning',
+        note: item.note,
+        device_info: navigator.userAgent
+      }));
 
-      if (txError) throw txError;
+      for (let i = 0; i < itemsToInsert.length; i += chunkSize) {
+        const chunk = itemsToInsert.slice(i, i + chunkSize);
+        const { error: txError } = await supabase.from('outbound_transactions').insert(chunk);
+        if (txError) throw txError;
+      }
 
-      // Update is_saved in current_scanned_items
+      // Update is_saved in current_scanned_items (batch update is usually safer than massive in() for thousands)
       const idsToUpdate = unsavedItems.map(item => item.id);
-      const { error: updateError } = await supabase
-        .from('current_scanned_items')
-        .update({ is_saved: true })
-        .in('id', idsToUpdate);
-
-      if (updateError) throw updateError;
+      for (let i = 0; i < idsToUpdate.length; i += chunkSize) {
+        const chunkIds = idsToUpdate.slice(i, i + chunkSize);
+        const { error: updateError } = await supabase
+          .from('current_scanned_items')
+          .update({ is_saved: true })
+          .in('id', chunkIds);
+        if (updateError) throw updateError;
+      }
 
       setMessage({ type: 'success', text: `Đã lưu ${unsavedItems.length} mã vào Data xuất.` });
       await fetchCurrentScannedItems();
@@ -1373,13 +1378,24 @@ export default function Outbound() {
 
   const deleteSelectedScanned = async () => {
     const idsToDelete = Array.from(selectedScanned);
-    const { error } = await supabase.from('current_scanned_items').delete().in('id', idsToDelete);
+    if (idsToDelete.length === 0) return;
     
-    if (error) {
-      setMessage({ type: 'error', text: 'Lỗi khi xóa mã quét: ' + error.message });
-    } else {
+    setLoading(true);
+    try {
+      const chunkSize = 200;
+      for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+        const chunk = idsToDelete.slice(i, i + chunkSize);
+        const { error } = await supabase.from('current_scanned_items').delete().in('id', chunk);
+        if (error) throw error;
+      }
+      
       await fetchCurrentScannedItems();
       setSelectedScanned(new Set());
+      setMessage({ type: 'success', text: `Đã xóa ${idsToDelete.length} mã quét thành công.` });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa mã quét: ' + error.message });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1487,12 +1503,17 @@ export default function Outbound() {
         };
       });
 
-      const { error } = await supabase.from('outbound_transactions').insert(itemsToSave);
-      if (error) {
-        const errorMsg = error.message.includes('Failed to fetch')
-          ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
-          : error.message;
-        throw new Error(errorMsg);
+      // Chunking for large datasets
+      const chunkSize = 200;
+      for (let i = 0; i < itemsToSave.length; i += chunkSize) {
+        const chunk = itemsToSave.slice(i, i + chunkSize);
+        const { error } = await supabase.from('outbound_transactions').insert(chunk);
+        if (error) {
+          const errorMsg = error.message.includes('Failed to fetch')
+            ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+            : error.message;
+          throw new Error(errorMsg);
+        }
       }
 
       setMessage({ type: 'success', text: `Đã lưu ${itemsToSave.length} dòng dữ liệu PL vào Data xuất.` });

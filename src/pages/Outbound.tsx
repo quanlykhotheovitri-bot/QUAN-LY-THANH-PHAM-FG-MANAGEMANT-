@@ -22,7 +22,8 @@ import {
   ArrowUpDown,
   Copy,
   Printer,
-  Settings
+  Settings,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
@@ -81,6 +82,16 @@ export default function Outbound() {
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [editingType, setEditingType] = useState<'scan' | 'pl' | null>(null);
   const [dataSubTab, setDataSubTab] = useState<'scan' | 'pl'>('scan');
+  
+  // Add PL Modal state
+  const [isAddPlModalOpen, setIsAddPlModalOpen] = useState(false);
+  const [newPlItem, setNewPlItem] = useState({
+    so: '',
+    rpro: '',
+    kh: '',
+    plNo: '',
+    totalBoxes: 0
+  });
 
   // Search states
   const [scannedSearch, setScannedSearch] = useState('');
@@ -1467,6 +1478,39 @@ export default function Outbound() {
     }
   };
 
+  const handleAddPlItem = async () => {
+    if (!newPlItem.so.trim() || !newPlItem.plNo.trim() || newPlItem.totalBoxes <= 0) {
+      setMessage({ type: 'error', text: 'Vui lòng điền đầy đủ các thông tin bắt buộc (SO, PL No, Số thùng).' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('current_pl_items')
+        .insert({
+          pl_no: newPlItem.plNo.trim(),
+          so: newPlItem.so.trim(),
+          rpro: newPlItem.rpro.trim(),
+          kh: newPlItem.kh.trim(),
+          total_boxes: newPlItem.totalBoxes,
+          qty: 0
+        });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: 'Đã thêm đơn xuất mới thành công.' });
+      setIsAddPlModalOpen(false);
+      setNewPlItem({ so: '', rpro: '', kh: '', plNo: '', totalBoxes: 0 });
+      await fetchCurrentPLItems();
+    } catch (error: any) {
+      console.error('Add PL Error:', error);
+      setMessage({ type: 'error', text: 'Lỗi khi thêm đơn xuất: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSavePLToOutbound = async () => {
     if (filteredPlItems.length === 0) return;
     setLoading(true);
@@ -2102,72 +2146,73 @@ export default function Outbound() {
 
       {activeTab === 'pl' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-            <div className="xl:col-span-1 space-y-6">
-              {!isViewer && (
-                <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
-                  <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Upload className="w-8 h-8" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">Tải lên PL nguồn</h3>
-                  <p className="text-slate-500 mb-6 text-sm">
-                    Chọn một hoặc nhiều file Excel để nạp vào danh sách chờ xử lý.
-                  </p>
-                  <label className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-orange-700 transition-all cursor-pointer inline-block w-full">
-                    Chọn file Excel
-                    <input type="file" multiple className="hidden" accept=".xlsx, .xls" onChange={handleSourceFilesUpload} />
-                  </label>
+          {!isViewer && (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="lg:col-span-1 bg-white p-6 rounded-2xl border-2 border-dashed border-slate-200 text-center flex flex-col items-center justify-center gap-3">
+                <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center shrink-0">
+                  <Upload className="w-6 h-6" />
                 </div>
-              )}
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 mb-1">Tải lên PL nguồn</h3>
+                  <p className="text-[10px] text-slate-500 font-bold mb-3 italic">Nạp dữ liệu từ file Excel (.xlsx, .xls)</p>
+                </div>
+                <label className="bg-orange-600 text-white px-6 py-2.5 rounded-xl font-black hover:bg-orange-700 transition-all cursor-pointer whitespace-nowrap text-xs shadow-lg shadow-orange-100 flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5" />
+                  CHỌN FILE EXCEL
+                  <input type="file" multiple className="hidden" accept=".xlsx, .xls" onChange={handleSourceFilesUpload} />
+                </label>
+              </div>
 
               {sourceFiles.length > 0 && (
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Danh sách PL nguồn</h3>
-                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full font-bold text-slate-500">
-                      {sourceFiles.length} FILE
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                    {sourceFiles.map((file, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group">
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-bold text-slate-700 truncate">{file.name}</span>
-                          <span className="text-[10px] text-slate-400">{file.data.length} dòng dữ liệu</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {file.status === 'success' ? (
-                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                          ) : (
-                            <div title={file.error}>
-                              <AlertCircle className="w-5 h-5 text-rose-500" />
-                            </div>
-                          )}
+                <div className="lg:col-span-3 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-6">
+                  <div className="flex-1 w-full min-w-0">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Danh sách PL nguồn ({sourceFiles.length})</h3>
+                      <button 
+                        onClick={() => setSourceFiles([])}
+                        className="text-[10px] font-bold text-rose-500 hover:scale-105 transition-all"
+                      >
+                        XÓA TẤT CẢ
+                      </button>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar">
+                      {sourceFiles.map((file, idx) => (
+                        <div key={idx} className="flex-shrink-0 w-48 p-3 bg-slate-50 rounded-xl border border-slate-100 relative group">
                           <button 
                             onClick={() => setSourceFiles(prev => prev.filter((_, i) => i !== idx))}
-                            className="p-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-500 shadow-sm opacity-0 group-hover:opacity-100 transition-all z-10"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
+                          <div className="flex items-center gap-2 mb-1">
+                            {file.status === 'success' ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            ) : (
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                            )}
+                            <span className="text-[11px] font-black text-slate-700 truncate">{file.name}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-bold ml-5">
+                            {file.data.length} dòng dữ liệu
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
 
                   <button
                     onClick={handleCopyPasteSourceFiles}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-100 transition-all"
+                    className="w-full md:w-auto px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-blue-100 transition-all shrink-0 uppercase text-xs tracking-widest"
                   >
                     <Copy className="w-5 h-5" />
-                    SAO CHÉP & DÁN VÀO PL HIỆN TẠI
+                    SAO CHÉP VÀO DS HIỆN TẠI
                   </button>
                 </div>
               )}
             </div>
+          )}
 
-            <div className="xl:col-span-3">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center text-orange-600 shadow-sm">
@@ -2258,6 +2303,15 @@ export default function Outbound() {
                         <Save className="w-3 h-3" />
                         LƯU DATA XUẤT
                       </button>
+                      {!isViewer && (
+                        <button 
+                          onClick={() => setIsAddPlModalOpen(true)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all"
+                        >
+                          <Plus className="w-3 h-3" />
+                          THÊM ĐƠN XUẤT
+                        </button>
+                      )}
                       {isAdmin && selectedPlItems.size > 0 && (
                         <button 
                           onClick={handleDeleteSelectedPlItems}
@@ -2420,9 +2474,7 @@ export default function Outbound() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
       {activeTab === 'data' && (
         <div className="space-y-6">
@@ -2688,6 +2740,96 @@ export default function Outbound() {
           </div>
         </div>
       )}
+
+      {/* Add PL Modal */}
+      <AnimatePresence>
+        {isAddPlModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
+                <h3 className="text-lg font-bold">Thêm đơn xuất mới</h3>
+                <button onClick={() => setIsAddPlModalOpen(false)} className="p-2 hover:bg-white/20 rounded-xl transition-all">
+                  <Plus className="w-5 h-5 rotate-45" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">OVN Order No (SO) <span className="text-rose-500">*</span></label>
+                  <input 
+                    type="text" 
+                    value={newPlItem.so}
+                    onChange={(e) => setNewPlItem({ ...newPlItem, so: e.target.value })}
+                    placeholder="Ví dụ: SO-260309-0231"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">RPRO</label>
+                  <input 
+                    type="text" 
+                    value={newPlItem.rpro}
+                    onChange={(e) => setNewPlItem({ ...newPlItem, rpro: e.target.value })}
+                    placeholder="Ví dụ: RPRO-260129-0529"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Khách hàng</label>
+                  <input 
+                    type="text" 
+                    value={newPlItem.kh}
+                    onChange={(e) => setNewPlItem({ ...newPlItem, kh: e.target.value })}
+                    placeholder="Tên khách hàng hoặc Công ty"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">PL No <span className="text-rose-500">*</span></label>
+                    <input 
+                      type="text" 
+                      value={newPlItem.plNo}
+                      onChange={(e) => setNewPlItem({ ...newPlItem, plNo: e.target.value })}
+                      placeholder="Ví dụ: PL-2604-01635"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Số thùng <span className="text-rose-500">*</span></label>
+                    <input 
+                      type="number" 
+                      value={newPlItem.totalBoxes || ''}
+                      onChange={(e) => setNewPlItem({ ...newPlItem, totalBoxes: parseInt(e.target.value) || 0 })}
+                      placeholder="0"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-black text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                <button 
+                  onClick={() => setIsAddPlModalOpen(false)}
+                  className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition-all"
+                >
+                  HỦY BỎ
+                </button>
+                <button 
+                  onClick={handleAddPlItem}
+                  disabled={loading}
+                  className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-black shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {loading ? 'ĐANG LƯU...' : 'LƯU THÔNG TIN'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Edit Modal */}
       <AnimatePresence>

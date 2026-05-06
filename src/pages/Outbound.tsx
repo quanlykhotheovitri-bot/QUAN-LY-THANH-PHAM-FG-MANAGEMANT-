@@ -41,7 +41,7 @@ export default function Outbound() {
     return id.toString().replace(/\s/g, '').toUpperCase();
   };
 
-  const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data'>('scan');
+  const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data' | 'check-pl'>('scan');
   const [scannedItems, setScannedItems] = useState<any[]>(() => {
     const saved = localStorage.getItem('outbound_scanned_items');
     return saved ? JSON.parse(saved) : [];
@@ -85,6 +85,9 @@ export default function Outbound() {
   
   // Add PL Modal state
   const [isAddPlModalOpen, setIsAddPlModalOpen] = useState(false);
+  const [checkPlData, setCheckPlData] = useState<any[]>([]);
+  const [checkPlDate, setCheckPlDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [confirmedPlData, setConfirmedPlData] = useState<Record<string, { status: string, qtyOrder: number, confirmedAt: string }>>({});
   const [newPlItem, setNewPlItem] = useState({
     so: '',
     rpro: '',
@@ -1586,6 +1589,181 @@ export default function Outbound() {
     }
   };
 
+  const handleCheckPL = async () => {
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      // 1. Fetch historical PL Data for selected date
+      const { data: historyPls, error: hError } = await supabase
+        .from('outbound_transactions')
+        .select('*')
+        .eq('type', 'PL')
+        .gte('created_at', `${checkPlDate}T00:00:00`)
+        .lte('created_at', `${checkPlDate}T23:59:59`);
+      
+      if (hError) throw hError;
+
+      // 2. Identify "Ok" PLs in current PL items
+      // We need to look at current_scanned_items too to compute status correctly if not already done
+      const okPlNames = new Set<string>();
+      const plGroupsInCurrent = new Map<string, any[]>();
+      plItems.forEach(item => {
+        const plNo = cleanId(item.plNo);
+        if (!plGroupsInCurrent.has(plNo)) plGroupsInCurrent.set(plNo, []);
+        plGroupsInCurrent.get(plNo)!.push(item);
+      });
+
+      plGroupsInCurrent.forEach((items, plNo) => {
+        const allOk = items.every(item => {
+          const cleanedSo = cleanId(item.so);
+          const cleanedRpro = cleanId(item.rpro);
+          const rproKey = `${plNo}|${cleanedRpro}`;
+          const soKey = `${plNo}|${cleanedSo}`;
+          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+          return scanCount === item.totalBoxes;
+        });
+        if (allOk && items.length > 0) okPlNames.add(plNo);
+      });
+
+      const currentOkPls = plItems.filter(item => okPlNames.has(cleanId(item.plNo)));
+
+      // 3. Group and process
+      const plMap = new Map<string, { plNo: string, qtyOrder: number, totalBox: number, uniquePairs: Set<string> }>();
+      
+      const processRaw = (list: any[], isHistory: boolean) => {
+        list.forEach(item => {
+          const plNoRaw = isHistory ? item.pl_no : item.plNo;
+          const plNo = cleanId(plNoRaw);
+          if (!plNo || plNo === 'N/A') return;
+          
+          const so = isHistory ? item.so : item.so;
+          const rpro = isHistory ? item.rpro : item.rpro;
+          const totalBox = isHistory ? item.quantity : item.totalBoxes;
+          
+          const pair = `${cleanId(so)}|${cleanId(rpro)}`;
+          
+          if (!plMap.has(plNo)) {
+            plMap.set(plNo, {
+              plNo: plNoRaw,
+              qtyOrder: 0,
+              totalBox: 0,
+              uniquePairs: new Set()
+            });
+          }
+          
+          const entry = plMap.get(plNo)!;
+          entry.totalBox += (Number(totalBox) || 0);
+          entry.uniquePairs.add(pair);
+        });
+      };
+
+      processRaw(historyPls || [], true);
+      processRaw(currentOkPls, false);
+
+      // 4. Fetch confirmations
+      const { data: confirmedData } = await supabase
+        .from('outbound_transactions')
+        .select('*')
+        .eq('type', 'PL_CHECK_CONFIRM');
+      
+      const confirmedMap: Record<string, any> = {};
+      if (confirmedData) {
+        confirmedData.forEach(c => {
+          confirmedMap[cleanId(c.pl_no)] = {
+            status: 'Confirmed',
+            qtyOrder: c.quantity,
+            confirmedAt: c.created_at
+          };
+        });
+      }
+      setConfirmedPlData(confirmedMap);
+
+      const results = Array.from(plMap.values()).map(entry => {
+        const plId = cleanId(entry.plNo);
+        const confirmed = confirmedMap[plId];
+        
+        let status = confirmed ? 'Confirmed' : '';
+        let qtyOrder = entry.uniquePairs.size;
+        let note = '';
+        
+        if (confirmed) {
+          if (qtyOrder !== confirmed.qtyOrder) {
+            note = 'Có thay đổi';
+          }
+        }
+        
+        return {
+          plNo: entry.plNo,
+          qtyOrder: qtyOrder,
+          totalBox: entry.totalBox,
+          status: status,
+          note: note
+        };
+      });
+
+      setCheckPlData(results);
+      if (results.length === 0) {
+        setMessage({ type: 'error', text: 'Không tìm thấy dữ liệu PL phù hợp để check.' });
+      } else {
+        setMessage({ type: 'success', text: `Đã đối chiếu xong ${results.length} PL.` });
+      }
+
+    } catch (err: any) {
+      console.error('Check PL error:', err);
+      setMessage({ type: 'error', text: 'Lỗi khi Check PL: ' + err.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmCheckPL = async (row: any) => {
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      // Check if already confirmed
+      const plId = cleanId(row.plNo);
+      const { data: existing } = await supabase
+        .from('outbound_transactions')
+        .select('id')
+        .eq('type', 'PL_CHECK_CONFIRM')
+        .eq('pl_no', row.plNo)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('outbound_transactions')
+          .update({
+            quantity: row.qtyOrder,
+            status: 'Confirmed',
+            note: 'Updated from Check PL tab',
+            device_info: navigator.userAgent,
+            created_at: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('outbound_transactions').insert({
+          type: 'PL_CHECK_CONFIRM',
+          pl_no: row.plNo,
+          quantity: row.qtyOrder,
+          status: 'Confirmed',
+          note: 'Confirmed from Check PL tab',
+          device_info: navigator.userAgent
+        });
+        if (error) throw error;
+      }
+
+      setMessage({ type: 'success', text: `Đã xác nhận PL ${row.plNo} thành công.` });
+      await handleCheckPL();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xác nhận PL: ' + err.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
   const handlePrintPL = () => {
     if (filteredPlItems.length === 0) return;
 
@@ -1800,6 +1978,15 @@ export default function Outbound() {
             >
               <HistoryIcon className="w-4 h-4" />
               Data xuất
+            </button>
+            <button
+              onClick={() => setActiveTab('check-pl')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'check-pl' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Check PL
             </button>
           </>
         )}
@@ -2737,6 +2924,100 @@ export default function Outbound() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'check-pl' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 border border-blue-100">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Kiểm tra PL (Check PL)</h2>
+                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Verify and Confirm Packing Lists</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CHỌN NGÀY</span>
+                <input
+                  type="date"
+                  value={checkPlDate}
+                  onChange={(e) => setCheckPlDate(e.target.value)}
+                  className="text-sm font-bold text-slate-700 bg-transparent outline-none focus:ring-0"
+                />
+              </div>
+              <button 
+                onClick={handleCheckPL}
+                disabled={loading}
+                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-100 flex items-center gap-2 disabled:opacity-50"
+              >
+                {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
+                CHECK PL
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#002060] text-white">
+                    <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Stt</th>
+                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">PL No</th>
+                    <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Qty order</th>
+                    <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Total box</th>
+                    <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Status</th>
+                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Ghi chú</th>
+                    <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Xác nhận</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {checkPlData.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-20 text-center">
+                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                          <CheckCircle2 className="w-10 h-10 text-slate-200" />
+                        </div>
+                        <p className="text-slate-400 italic text-sm font-medium">Bấm "Check PL" để bắt đầu đối chiếu dữ liệu</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    checkPlData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors group">
+                        <td className="px-4 py-4 text-center text-xs font-bold text-slate-400 border border-slate-100">{idx + 1}</td>
+                        <td className="px-6 py-4 text-center text-sm font-black text-slate-800 border border-slate-100">{row.plNo}</td>
+                        <td className="px-4 py-4 text-center text-sm font-bold text-blue-600 border border-slate-100 bg-blue-50/10">{row.qtyOrder}</td>
+                        <td className="px-4 py-4 text-center text-sm font-bold text-slate-700 border border-slate-100">{row.totalBox}</td>
+                        <td className={`px-4 py-4 text-center text-xs font-black border border-slate-100 ${row.status === 'Confirmed' ? 'text-emerald-500' : 'text-slate-300 font-normal italic'}`}>
+                          {row.status || 'Chưa xác nhận'}
+                        </td>
+                        <td className={`px-6 py-4 text-center text-xs font-bold border border-slate-100 ${row.note === 'Có thay đổi' ? 'text-rose-500 bg-rose-50/30' : 'text-slate-400'}`}>
+                          {row.note}
+                        </td>
+                        <td className="px-4 py-4 text-center border border-slate-100">
+                          <button
+                            onClick={() => handleConfirmCheckPL(row)}
+                            disabled={loading || row.status === 'Confirmed'}
+                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                              row.status === 'Confirmed' 
+                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
+                                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-100'
+                            }`}
+                          >
+                            {row.status === 'Confirmed' ? 'ĐÃ XÁC NHẬN' : 'XÁC NHẬN'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

@@ -1751,6 +1751,7 @@ export default function Outbound() {
         } else {
           await supabase.from('outbound_transactions').insert({
             type: 'PL_CHECK_CONFIRM',
+            qr_code: 'PL_CHECK_CONFIRM',
             pl_no: row.plNo,
             quantity: row.qtyOrder,
             status: 'Confirmed',
@@ -1841,6 +1842,7 @@ export default function Outbound() {
       } else {
         const { error } = await supabase.from('outbound_transactions').insert({
           type: 'PL_CHECK_CONFIRM',
+          qr_code: 'PL_CHECK_CONFIRM',
           pl_no: row.plNo,
           quantity: row.qtyOrder,
           status: 'Confirmed',

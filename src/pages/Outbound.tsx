@@ -86,6 +86,7 @@ export default function Outbound() {
   // Add PL Modal state
   const [isAddPlModalOpen, setIsAddPlModalOpen] = useState(false);
   const [checkPlData, setCheckPlData] = useState<any[]>([]);
+  const [selectedCheckPl, setSelectedCheckPl] = useState<Set<string>>(new Set());
   const [checkPlDate, setCheckPlDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [confirmedPlData, setConfirmedPlData] = useState<Record<string, { status: string, qtyOrder: number, confirmedAt: string }>>({});
   const [newPlItem, setNewPlItem] = useState({
@@ -1707,7 +1708,7 @@ export default function Outbound() {
       } else {
         setMessage({ type: 'success', text: `Đã đối chiếu xong ${results.length} PL.` });
       }
-
+      setSelectedCheckPl(new Set());
     } catch (err: any) {
       console.error('Check PL error:', err);
       setMessage({ type: 'error', text: 'Lỗi khi Check PL: ' + err.message });
@@ -1715,6 +1716,101 @@ export default function Outbound() {
       setLoading(false);
       setIsLoading(false);
     }
+  };
+
+  const handleBatchConfirmCheckPL = async () => {
+    if (selectedCheckPl.size === 0) return;
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      const itemsToConfirm = checkPlData.filter(row => selectedCheckPl.has(cleanId(row.plNo)) && row.status !== 'Confirmed');
+      
+      if (itemsToConfirm.length === 0) {
+        setMessage({ type: 'error', text: 'Không có hàng nào cần xác nhận trong danh sách đã chọn.' });
+        return;
+      }
+
+      for (const row of itemsToConfirm) {
+        const { data: existing } = await supabase
+          .from('outbound_transactions')
+          .select('id')
+          .eq('type', 'PL_CHECK_CONFIRM')
+          .eq('pl_no', row.plNo)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('outbound_transactions')
+            .update({
+              quantity: row.qtyOrder,
+              status: 'Confirmed',
+              note: 'Updated from Batch Check PL',
+              created_at: new Date().toISOString()
+            })
+            .eq('id', existing.id);
+        } else {
+          await supabase.from('outbound_transactions').insert({
+            type: 'PL_CHECK_CONFIRM',
+            pl_no: row.plNo,
+            quantity: row.qtyOrder,
+            status: 'Confirmed',
+            note: 'Confirmed from Batch Check PL'
+          });
+        }
+      }
+
+      setMessage({ type: 'success', text: `Đã xác nhận ${itemsToConfirm.length} PL thành công.` });
+      await handleCheckPL();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xác nhận hàng loạt: ' + err.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleBatchDeleteCheckPL = async () => {
+    if (selectedCheckPl.size === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa trạng thái xác nhận của ${selectedCheckPl.size} PL đã chọn?`)) return;
+
+    setLoading(true);
+    setIsLoading(true);
+    try {
+      const plNos = checkPlData.filter(row => selectedCheckPl.has(cleanId(row.plNo))).map(row => row.plNo);
+      
+      const { error } = await supabase
+        .from('outbound_transactions')
+        .delete()
+        .eq('type', 'PL_CHECK_CONFIRM')
+        .in('pl_no', plNos);
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `Đã xóa trạng thái xác nhận của ${plNos.length} PL.` });
+      await handleCheckPL();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xóa trạng thái xác nhận: ' + err.message });
+    } finally {
+      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleExportCheckPlExcel = () => {
+    if (checkPlData.length === 0) return;
+    
+    const worksheet = XLSX.utils.json_to_sheet(checkPlData.map((row, idx) => ({
+      'STT': idx + 1,
+      'PL NO': row.plNo,
+      'QTY ORDER': row.qtyOrder,
+      'TOTAL BOX': row.totalBox,
+      'STATUS': row.status || 'Chưa xác nhận',
+      'GHI CHÚ': row.note
+    })));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Check PL');
+    XLSX.writeFile(workbook, `Check_PL_${checkPlDate}.xlsx`);
   };
 
   const handleConfirmCheckPL = async (row: any) => {
@@ -2942,6 +3038,14 @@ export default function Outbound() {
             </div>
 
             <div className="flex items-center gap-4">
+              <button 
+                onClick={handleExportCheckPlExcel}
+                disabled={checkPlData.length === 0}
+                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-xs font-black hover:bg-emerald-100 transition-all disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                XUẤT EXCEL
+              </button>
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CHỌN NGÀY</span>
                 <input
@@ -2962,11 +3066,65 @@ export default function Outbound() {
             </div>
           </div>
 
+          <AnimatePresence>
+            {selectedCheckPl.size > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="bg-[#002060] py-4 px-8 rounded-2xl flex items-center justify-between shadow-2xl text-white"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center font-black">
+                    {selectedCheckPl.size}
+                  </div>
+                  <span className="text-sm font-black uppercase tracking-widest">ĐÃ CHỌN {selectedCheckPl.size} PL</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={handleBatchConfirmCheckPL}
+                    className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-[10px] font-black flex items-center gap-2 transition-all"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    XÁC NHẬN HÀNG LOẠT
+                  </button>
+                  <button 
+                    onClick={handleBatchDeleteCheckPL}
+                    className="px-6 py-2 bg-rose-500 hover:bg-rose-600 rounded-xl text-[10px] font-black flex items-center gap-2 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    XÓA TRẠNG THÁI XÁC NHẬN
+                  </button>
+                  <button 
+                    onClick={() => setSelectedCheckPl(new Set())}
+                    className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black transition-all"
+                  >
+                    HỦY CHỌN
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#002060] text-white">
+                    <th className="px-4 py-4 border border-slate-300 text-center">
+                      <input 
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={checkPlData.length > 0 && selectedCheckPl.size === checkPlData.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCheckPl(new Set(checkPlData.map(r => cleanId(r.plNo))));
+                          } else {
+                            setSelectedCheckPl(new Set());
+                          }
+                        }}
+                      />
+                    </th>
                     <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Stt</th>
                     <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">PL No</th>
                     <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Qty order</th>
@@ -2979,7 +3137,7 @@ export default function Outbound() {
                 <tbody className="divide-y divide-slate-100">
                   {checkPlData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-20 text-center">
+                      <td colSpan={8} className="px-6 py-20 text-center">
                         <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
                           <CheckCircle2 className="w-10 h-10 text-slate-200" />
                         </div>
@@ -2987,33 +3145,50 @@ export default function Outbound() {
                       </td>
                     </tr>
                   ) : (
-                    checkPlData.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                        <td className="px-4 py-4 text-center text-xs font-bold text-slate-400 border border-slate-100">{idx + 1}</td>
-                        <td className="px-6 py-4 text-center text-sm font-black text-slate-800 border border-slate-100">{row.plNo}</td>
-                        <td className="px-4 py-4 text-center text-sm font-bold text-blue-600 border border-slate-100 bg-blue-50/10">{row.qtyOrder}</td>
-                        <td className="px-4 py-4 text-center text-sm font-bold text-slate-700 border border-slate-100">{row.totalBox}</td>
-                        <td className={`px-4 py-4 text-center text-xs font-black border border-slate-100 ${row.status === 'Confirmed' ? 'text-emerald-500' : 'text-slate-300 font-normal italic'}`}>
-                          {row.status || 'Chưa xác nhận'}
-                        </td>
-                        <td className={`px-6 py-4 text-center text-xs font-bold border border-slate-100 ${row.note === 'Có thay đổi' ? 'text-rose-500 bg-rose-50/30' : 'text-slate-400'}`}>
-                          {row.note}
-                        </td>
-                        <td className="px-4 py-4 text-center border border-slate-100">
-                          <button
-                            onClick={() => handleConfirmCheckPL(row)}
-                            disabled={loading || row.status === 'Confirmed'}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
-                              row.status === 'Confirmed' 
-                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
-                                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-100'
-                            }`}
-                          >
-                            {row.status === 'Confirmed' ? 'ĐÃ XÁC NHẬN' : 'XÁC NHẬN'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    checkPlData.map((row, idx) => {
+                      const plId = cleanId(row.plNo);
+                      const isSelected = selectedCheckPl.has(plId);
+                      return (
+                        <tr key={idx} className={`group transition-all ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                          <td className="px-4 py-4 text-center border border-slate-100">
+                            <input 
+                              type="checkbox"
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const next = new Set(selectedCheckPl);
+                                if (e.target.checked) next.add(plId);
+                                else next.delete(plId);
+                                setSelectedCheckPl(next);
+                              }}
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center text-xs font-bold text-slate-400 border border-slate-100">{idx + 1}</td>
+                          <td className="px-6 py-4 text-center text-sm font-black text-slate-800 border border-slate-100">{row.plNo}</td>
+                          <td className="px-4 py-4 text-center text-sm font-bold text-blue-600 border border-slate-100">{row.qtyOrder}</td>
+                          <td className="px-4 py-4 text-center text-sm font-bold text-slate-700 border border-slate-100">{row.totalBox}</td>
+                          <td className={`px-4 py-4 text-center text-xs font-black border border-slate-100 ${row.status === 'Confirmed' ? 'text-emerald-500' : 'text-slate-300 font-normal italic'}`}>
+                            {row.status || 'Chưa xác nhận'}
+                          </td>
+                          <td className={`px-6 py-4 text-center text-xs font-bold border border-slate-100 ${row.note === 'Có thay đổi' ? 'text-rose-500 bg-rose-50/30' : 'text-slate-400'}`}>
+                            {row.note}
+                          </td>
+                          <td className="px-4 py-4 text-center border border-slate-100">
+                            <button
+                              onClick={() => handleConfirmCheckPL(row)}
+                              disabled={loading || row.status === 'Confirmed'}
+                              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                                row.status === 'Confirmed' 
+                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-100'
+                              }`}
+                            >
+                              {row.status === 'Confirmed' ? 'ĐÃ XÁC NHẬN' : 'XÁC NHẬN'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

@@ -1766,7 +1766,7 @@ export default function Outbound() {
       const currentOkPls = plItems.filter(item => okPlNames.has(cleanId(item.plNo)));
 
       // 3. Group and process
-      const plMap = new Map<string, { plNo: string, qtyOrder: number, totalBox: number, uniquePairs: Set<string> }>();
+      const plMap = new Map<string, { plNo: string, qtyOrder: number, totalBox: number, kh: string, uniquePairs: Set<string> }>();
       
       const processRaw = (list: any[], isHistory: boolean) => {
         list.forEach(item => {
@@ -1774,9 +1774,10 @@ export default function Outbound() {
           const plNo = cleanId(plNoRaw);
           if (!plNo || plNo === 'N/A') return;
           
-          const so = isHistory ? item.so : item.so;
-          const rpro = isHistory ? item.rpro : item.rpro;
-          const totalBox = isHistory ? item.quantity : item.totalBoxes;
+          const so = isHistory ? (item.so || '') : (item.so || '');
+          const rpro = isHistory ? (item.rpro || '') : (item.rpro || '');
+          const totalBox = isHistory ? (item.quantity) : (item.totalBoxes);
+          const kh = isHistory ? (item.kh || '') : (item.kh || '');
           
           const pair = `${cleanId(so)}|${cleanId(rpro)}`;
           
@@ -1785,6 +1786,7 @@ export default function Outbound() {
               plNo: plNoRaw,
               qtyOrder: 0,
               totalBox: 0,
+              kh: kh || 'N/A',
               uniquePairs: new Set()
             });
           }
@@ -1792,6 +1794,7 @@ export default function Outbound() {
           const entry = plMap.get(plNo)!;
           entry.totalBox += (Number(totalBox) || 0);
           entry.uniquePairs.add(pair);
+          if (kh && (!entry.kh || entry.kh === 'N/A')) entry.kh = kh;
         });
       };
 
@@ -1839,6 +1842,7 @@ export default function Outbound() {
         
         return {
           plNo: entry.plNo,
+          kh: entry.kh,
           qtyOrder: qtyOrder,
           totalBox: entry.totalBox,
           status: status,
@@ -1946,6 +1950,7 @@ export default function Outbound() {
     
     const worksheet = XLSX.utils.json_to_sheet(checkPlData.map((row, idx) => ({
       'STT': idx + 1,
+      'KHÁCH HÀNG': row.kh,
       'PL NO': row.plNo,
       'QTY ORDER': row.qtyOrder,
       'TOTAL BOX': row.totalBox,
@@ -3286,6 +3291,7 @@ export default function Outbound() {
                       />
                     </th>
                     <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Stt</th>
+                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Khách hàng</th>
                     <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">PL No</th>
                     <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Qty order</th>
                     <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center">Total box</th>
@@ -3297,7 +3303,7 @@ export default function Outbound() {
                 <tbody className="divide-y divide-slate-100">
                   {checkPlData.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-20 text-center">
+                      <td colSpan={9} className="px-6 py-20 text-center">
                         <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
                           <CheckCircle2 className="w-10 h-10 text-slate-200" />
                         </div>
@@ -3324,6 +3330,7 @@ export default function Outbound() {
                             />
                           </td>
                           <td className="px-4 py-4 text-center text-xs font-bold text-slate-400 border border-slate-100">{idx + 1}</td>
+                          <td className="px-6 py-4 text-center text-xs font-bold text-blue-600 border border-slate-100">{row.kh}</td>
                           <td className="px-6 py-4 text-center text-sm font-black text-slate-800 border border-slate-100">{row.plNo}</td>
                           <td className="px-4 py-4 text-center text-sm font-bold text-blue-600 border border-slate-100">{row.qtyOrder}</td>
                           <td className="px-4 py-4 text-center text-sm font-bold text-slate-700 border border-slate-100">{row.totalBox}</td>

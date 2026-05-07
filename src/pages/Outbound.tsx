@@ -23,7 +23,8 @@ import {
   Copy,
   Printer,
   Settings,
-  Plus
+  Plus,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WarehouseLocation, InventoryBalance } from '../types';
@@ -407,7 +408,8 @@ export default function Outbound() {
         rpro: item.rpro?.trim() || '',
         kh: item.kh?.trim() || '',
         qty: item.qty,
-        totalBoxes: item.total_boxes
+        totalBoxes: item.total_boxes,
+        status: item.status
       })));
       
       const uniquePLs = Array.from(new Set(allData.map(item => item.pl_no?.trim()).filter(pl => pl)));
@@ -1515,21 +1517,52 @@ export default function Outbound() {
     }
   };
 
+  const handleConfirmDropped = async () => {
+    if (selectedPlItems.size === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xác nhận rớt ${selectedPlItems.size} đơn này?`)) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('current_pl_items')
+        .update({ status: 'Chưa xuất' })
+        .in('id', Array.from(selectedPlItems));
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: `Đã xác nhận rớt ${selectedPlItems.size} đơn thành công.` });
+      await fetchCurrentPLItems();
+      setSelectedPlItems(new Set());
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Lỗi khi xác nhận rớt: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSavePLToOutbound = async () => {
     if (filteredPlItems.length === 0) return;
     setLoading(true);
     try {
-      // Pre-calculate scan counts and inventory matches to avoid O(N*M) in the map
+      // 1. Prepare items to save to outbound_transactions (Type: PL)
       const itemsToSave = filteredPlItems.map(item => {
         const cleanedSo = cleanId(item.so);
         const cleanedRpro = cleanId(item.rpro);
+        const cleanedPlNo = cleanId(item.plNo);
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
         
-        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(cleanedRpro) || 0) : (plItemStats.soCounts.get(cleanedSo) || 0);
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
 
         const diff = item.totalBoxes - scanCount;
         let statusText = 'OK';
-        if (diff > 0) statusText = `Thiếu (${diff})`;
-        else if (diff < 0) statusText = `Dư (${Math.abs(diff)})`;
+        if (item.status === 'Chưa xuất') {
+          statusText = 'Chưa xuất';
+        } else if (diff > 0) {
+          statusText = `Thiếu (${diff})`;
+        } else if (diff < 0) {
+          statusText = `Dư (${Math.abs(diff)})`;
+        }
 
         const invMatch = cleanedRpro 
           ? plItemStats.rproInv.get(cleanedRpro) 
@@ -1551,21 +1584,101 @@ export default function Outbound() {
         };
       });
 
-      // Chunking for large datasets
+      // 2. Inventory Deduction & Movements (Only for OK and Dư)
+      const inventoryUpdates: { id: string, quantity: number }[] = [];
+      const movements: any[] = [];
+      const scannedIdsToAutoSave: string[] = [];
+
+      filteredPlItems.forEach(plItem => {
+        // Only subtract inventory if status is NOT "Chưa xuất"
+        if (plItem.status === 'Chưa xuất') return;
+        
+        const cleanedSo = cleanId(plItem.so);
+        const cleanedRpro = cleanId(plItem.rpro);
+        const cleanedPlNo = cleanId(plItem.plNo);
+        
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+        const diff = plItem.totalBoxes - scanCount;
+
+        // OK or Dư (diff <= 0) - subtract inventory based on real scans
+        if (diff <= 0) {
+          const matchedScans = enrichedScannedItems.filter(s => 
+            !s.isSaved && 
+            cleanId(s.plNo) === cleanedPlNo && 
+            (cleanedRpro && s.rpro ? cleanId(s.rpro) === cleanedRpro : cleanId(s.so) === cleanedSo)
+          );
+
+          matchedScans.forEach(scan => {
+            if (scan.inventory_id) {
+              inventoryUpdates.push({ id: scan.inventory_id, quantity: scan.outQty });
+              movements.push({
+                type: 'OUTBOUND',
+                qr_code: scan.qrCode,
+                so: scan.so,
+                rpro: scan.rpro,
+                kh: scan.kh,
+                from_location: scan.locationPath,
+                quantity: scan.outQty,
+                remark: `Xuất kho từ PL: ${plItem.plNo}`
+              });
+              scannedIdsToAutoSave.push(scan.id);
+            }
+          });
+        }
+      });
+
+      // 3. Perform Subspace Operations (Sequential and Chunked)
+      // a. Save PL Data to outbound_transactions
       const chunkSize = 200;
       for (let i = 0; i < itemsToSave.length; i += chunkSize) {
         const chunk = itemsToSave.slice(i, i + chunkSize);
         const { error } = await supabase.from('outbound_transactions').insert(chunk);
+        if (error) throw error;
+      }
+
+      // b. Subtract Inventory
+      for (const update of inventoryUpdates) {
+        const { error } = await supabase.rpc('decrement_inventory_by_id', { 
+          p_id: update.id, 
+          p_qty: update.quantity 
+        });
+        // Note: We ignore if rpc doesn't exist yet, but ideally we should have it.
+        // Fallback to manual update if RPC fails
         if (error) {
-          const errorMsg = error.message.includes('Failed to fetch')
-            ? 'Lỗi kết nối Supabase (Failed to fetch). Vui lòng kiểm tra cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
-            : error.message;
-          throw new Error(errorMsg);
+          const { data: inv } = await supabase.from('inventory_balances').select('quantity').eq('id', update.id).single();
+          if (inv) {
+            const newQty = inv.quantity - update.quantity;
+            if (newQty <= 0) {
+              await supabase.from('inventory_balances').delete().eq('id', update.id);
+            } else {
+              await supabase.from('inventory_balances').update({ quantity: newQty, last_updated: new Date().toISOString() }).eq('id', update.id);
+            }
+          }
         }
       }
 
-      setMessage({ type: 'success', text: `Đã lưu ${itemsToSave.length} dòng dữ liệu PL vào Data xuất.` });
+      // c. Record Movements
+      if (movements.length > 0) {
+        for (let i = 0; i < movements.length; i += chunkSize) {
+          const chunk = movements.slice(i, i + chunkSize);
+          await supabase.from('inventory_movements').insert(chunk);
+        }
+      }
+
+      // d. Mark scans as saved
+      if (scannedIdsToAutoSave.length > 0) {
+        for (let i = 0; i < scannedIdsToAutoSave.length; i += chunkSize) {
+          const chunkIds = scannedIdsToAutoSave.slice(i, i + chunkSize);
+          await supabase.from('current_scanned_items').update({ is_saved: true }).in('id', chunkIds);
+        }
+      }
+
+      setMessage({ type: 'success', text: `Đã lưu ${itemsToSave.length} dòng dữ liệu PL & cập nhật tồn kho.` });
       fetchOutboundData();
+      await fetchInventoryBalances(); // Refresh inventory balances state
+      await fetchCurrentScannedItems(); // Refresh scanned items to show saved status
     } catch (error: any) {
       setMessage({ type: 'error', text: 'Lỗi khi lưu dữ liệu PL: ' + error.message });
     } finally {
@@ -1683,13 +1796,20 @@ export default function Outbound() {
         const plId = cleanId(entry.plNo);
         const confirmed = confirmedMap[plId];
         
+        const itemsInCurrent = plItems.filter(i => cleanId(i.plNo) === plId);
+        const unshipCount = itemsInCurrent.filter(i => i.status === 'Chưa xuất').length;
+
         let status = confirmed ? 'Confirmed' : '';
         let qtyOrder = entry.uniquePairs.size;
         let note = '';
         
+        if (unshipCount > 0) {
+          note = `Rớt: ${unshipCount}`;
+        }
+        
         if (confirmed) {
           if (qtyOrder !== confirmed.qtyOrder) {
-            note = 'Có thay đổi';
+            note = (note ? note + ' | ' : '') + 'Có thay đổi';
           }
         }
         
@@ -2581,6 +2701,14 @@ export default function Outbound() {
                         IN PL
                       </button>
                       <button 
+                        onClick={handleConfirmDropped}
+                        disabled={loading || selectedPlItems.size === 0}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-500 text-white rounded-lg text-[10px] font-bold hover:bg-rose-600 transition-all disabled:opacity-50"
+                      >
+                        <XCircle className="w-3 h-3" />
+                        XÁC NHẬN RỚT
+                      </button>
+                      <button 
                         onClick={handleSavePLToOutbound}
                         disabled={loading}
                         className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
@@ -2683,15 +2811,20 @@ export default function Outbound() {
                           const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
 
                           const diff = item.totalBoxes - scanCount;
-                          let statusText = 'ok';
+                          let statusText = 'OK';
                           let statusColor = 'text-emerald-600';
                           
-                          if (diff > 0) {
-                            statusText = `Thiếu (${diff})`;
-                            statusColor = 'text-rose-600';
-                          } else if (diff < 0) {
-                            statusText = `Dư (${Math.abs(diff)})`;
-                            statusColor = 'text-amber-600';
+                          if (item.status === 'Chưa xuất') {
+                            statusText = 'Chưa xuất';
+                            statusColor = 'text-slate-400 font-bold italic';
+                          } else {
+                            if (diff > 0) {
+                              statusText = `Thiếu (${diff})`;
+                              statusColor = 'text-rose-600';
+                            } else if (diff < 0) {
+                              statusText = `Dư (${Math.abs(diff)})`;
+                              statusColor = 'text-amber-600';
+                            }
                           }
 
                           const invMatch = cleanedRpro 

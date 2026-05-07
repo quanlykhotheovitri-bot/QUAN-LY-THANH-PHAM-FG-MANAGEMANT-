@@ -409,7 +409,7 @@ export default function Outbound() {
         kh: item.kh?.trim() || '',
         qty: item.qty,
         totalBoxes: item.total_boxes,
-        status: item.status
+        status: (item.status === 'Chưa xuất' || item.kh?.includes('[CHƯA XUẤT]')) ? 'Chưa xuất' : 'OK'
       })));
       
       const uniquePLs = Array.from(new Set(allData.map(item => item.pl_no?.trim()).filter(pl => pl)));
@@ -1523,12 +1523,28 @@ export default function Outbound() {
     
     setLoading(true);
     try {
+      // Primary attempt: update status column
       const { error } = await supabase
         .from('current_pl_items')
         .update({ status: 'Chưa xuất' })
         .in('id', Array.from(selectedPlItems));
 
-      if (error) throw error;
+      if (error) {
+        // Fallback: if status column doesn't exist, use kh suffix
+        if (error.message.includes('status') || error.code === '42703') {
+          const itemsToUpdate = plItems.filter(i => selectedPlItems.has(i.id));
+          for (const item of itemsToUpdate) {
+            if (!item.kh.includes('[CHƯA XUẤT]')) {
+              await supabase
+                .from('current_pl_items')
+                .update({ kh: item.kh + ' [CHƯA XUẤT]' })
+                .eq('id', item.id);
+            }
+          }
+        } else {
+          throw error;
+        }
+      }
 
       setMessage({ type: 'success', text: `Đã xác nhận rớt ${selectedPlItems.size} đơn thành công.` });
       await fetchCurrentPLItems();
@@ -2811,10 +2827,11 @@ export default function Outbound() {
                           const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
 
                           const diff = item.totalBoxes - scanCount;
+                          const isDropped = item.status === 'Chưa xuất' || item.kh?.includes('[CHƯA XUẤT]');
                           let statusText = 'OK';
                           let statusColor = 'text-emerald-600';
                           
-                          if (item.status === 'Chưa xuất') {
+                          if (isDropped) {
                             statusText = 'Chưa xuất';
                             statusColor = 'text-slate-400 font-bold italic';
                           } else {

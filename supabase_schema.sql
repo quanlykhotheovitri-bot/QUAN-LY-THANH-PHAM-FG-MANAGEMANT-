@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS current_pl_items (
     pl_no TEXT,
     qty INTEGER,
     total_boxes INTEGER NOT NULL,
+    status TEXT DEFAULT 'OK',
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

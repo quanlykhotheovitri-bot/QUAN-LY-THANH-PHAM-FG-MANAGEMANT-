@@ -163,7 +163,7 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    let result = enrichedScannedItems;
+    let result = enrichedScannedItems.filter(item => !item.isSaved);
     
     // Search filter
     if (scannedSearch.trim()) {
@@ -1370,11 +1370,19 @@ export default function Outbound() {
 
       if (error) throw error;
 
-      // Clear current scanned items from database
-      await supabase.from('current_scanned_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // Mark current scanned items as saved in database instead of deleting
+      const unsavedItems = enrichedScannedItems.filter(item => !item.isSaved);
+      if (unsavedItems.length > 0) {
+        const chunkSize = 200;
+        const idsToUpdate = unsavedItems.map(item => item.id);
+        for (let i = 0; i < idsToUpdate.length; i += chunkSize) {
+          const chunk = idsToUpdate.slice(i, i + chunkSize);
+          await supabase.from('current_scanned_items').update({ is_saved: true }).in('id', chunk);
+        }
+      }
 
-      setMessage({ type: 'success', text: `Đã xuất kho thành công ${scannedItems.length} kiện hàng.` });
-      setScannedItems([]);
+      setMessage({ type: 'success', text: `Đã xuất kho thành công ${unsavedItems.length} kiện hàng.` });
+      await fetchCurrentScannedItems();
       setSelectedScanned(new Set());
       clearAppCache();
       fetchOutboundData();

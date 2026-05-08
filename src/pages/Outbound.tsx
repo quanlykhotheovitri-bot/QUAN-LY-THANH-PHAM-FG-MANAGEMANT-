@@ -114,9 +114,12 @@ export default function Outbound() {
     fetchLocations();
     fetchInventoryBalances();
     fetchCurrentPLItems();
-    fetchCurrentScannedItems();
     fetchOutboundData();
   }, [activeTab, outboundPage, dataSubTab, outboundSearch, startDate, endDate]);
+
+  useEffect(() => {
+    fetchCurrentScannedItems();
+  }, [activeTab]);
 
   const enrichedScannedItems = useMemo(() => {
     return scannedItems.map(item => {
@@ -163,7 +166,7 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    let result = enrichedScannedItems.filter(item => !item.isSaved);
+    let result = enrichedScannedItems;
     
     // Search filter
     if (scannedSearch.trim()) {
@@ -2330,6 +2333,11 @@ export default function Outbound() {
                 <div className="p-4 md:p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
                   <h2 className="text-lg font-bold text-white uppercase tracking-tight">
                     Scan Xuất {scannedStatusFilter !== 'ALL' || scannedSearch ? `(${filteredScannedItems.length}/${enrichedScannedItems.length})` : `(${enrichedScannedItems.length})`}
+                    {enrichedScannedItems.some(item => item.isSaved) && (
+                      <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-normal italic">
+                        (Bao gồm dữ liệu đã lưu)
+                      </span>
+                    )}
                   </h2>
                   
                   <div className="flex-1 max-w-md relative flex gap-2">

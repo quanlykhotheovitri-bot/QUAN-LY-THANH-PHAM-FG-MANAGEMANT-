@@ -154,7 +154,7 @@ export default function Outbound() {
         status,
         note,
         kh: plMatch ? plMatch.kh : item.kh,
-        totalBoxes: plMatch ? plMatch.totalBoxes : item.totalBoxes,
+        totalBoxes: 1,
         plNo: plMatch ? plMatch.plNo : item.plNo,
         inventory_id: inventory?.id || item.inventory_id,
         locationPath: inventory?.location_path || item.locationPath
@@ -570,17 +570,51 @@ export default function Outbound() {
       
       const qrCodes = parsedItems.map(p => p.qrCode);
 
+      // Identify duplicates
+      const existingQRSets = new Set(scannedItems.map(s => s.qrCode));
+      const seenInManual = new Set<string>();
+      const duplicateCodes: string[] = [];
+      const uniqueNewItems: any[] = [];
+
+      parsedItems.forEach(item => {
+        if (existingQRSets.has(item.qrCode) || seenInManual.has(item.qrCode)) {
+          duplicateCodes.push(item.qrCode);
+        } else {
+          seenInManual.add(item.qrCode);
+          uniqueNewItems.push(item);
+        }
+      });
+
+      let itemsToActuallyProcess = uniqueNewItems;
+
+      if (duplicateCodes.length > 0) {
+        const confirmMsg = `Phát hiện ${duplicateCodes.length} mã QR bị trùng lặp:\n${duplicateCodes.slice(0, 10).join('\n')}${duplicateCodes.length > 10 ? '\n...' : ''}\n\nBạn có muốn XÓA TRÙNG LẶP và tiếp tục xử lý các mã duy nhất không?`;
+        if (!window.confirm(confirmMsg)) {
+          setLoading(false);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (itemsToActuallyProcess.length === 0) {
+        setMessage({ type: 'error', text: 'Không có dữ liệu mới để xử lý (tất cả đều bị trùng lặp).' });
+        setLoading(false);
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Chunked QR lookup
       const inventories: any[] = [];
       const qrChunkSize = 500;
-      for (let i = 0; i < qrCodes.length; i += qrChunkSize) {
-        const chunk = qrCodes.slice(i, i + qrChunkSize);
+      const codesToLookup = itemsToActuallyProcess.map(p => p.qrCode);
+      for (let i = 0; i < codesToLookup.length; i += qrChunkSize) {
+        const chunk = codesToLookup.slice(i, i + qrChunkSize);
         const { data } = await supabase.from('inventory_balances').select('*').in('qr_code', chunk);
         if (data) inventories.push(...data);
       }
       
-      const sos = parsedItems.map(p => p.so).filter(Boolean);
-      const rpros = parsedItems.map(p => p.rpro).filter(Boolean);
+      const sos = itemsToActuallyProcess.map(p => p.so).filter(Boolean);
+      const rpros = itemsToActuallyProcess.map(p => p.rpro).filter(Boolean);
       
       const sourceMatches: any[] = [];
       const filterChunkSize = 200; // Even smaller for complex or filters
@@ -599,7 +633,7 @@ export default function Outbound() {
         if (data) sourceMatches.push(...data);
       }
 
-      const itemsToInsert = parsedItems.map(parsed => {
+      const itemsToInsert = itemsToActuallyProcess.map(parsed => {
         const inventory = inventories?.find(i => i.qr_code === parsed.qrCode);
         const sourceMatch = sourceMatches.find(s => 
           (parsed.rpro && s.rpro === parsed.rpro) || (parsed.so && s.so === parsed.so)
@@ -620,7 +654,7 @@ export default function Outbound() {
           kh: plMatch ? plMatch.kh : (sourceMatch ? sourceMatch.kh : 'N/A'),
           pl_no: plMatch ? plMatch.plNo : 'N/A',
           out_qty: parsed.quantity,
-          total_boxes: plMatch ? plMatch.totalBoxes : (sourceMatch ? sourceMatch.totalBoxes : 0),
+          total_boxes: 1,
           location_path: inventory?.location_path || 'N/A',
           status,
           note,
@@ -1299,7 +1333,7 @@ export default function Outbound() {
       so: parsed.so,
       rpro: parsed.rpro,
       kh: plMatch ? plMatch.kh : (sourceMatch ? sourceMatch.kh : 'N/A'),
-      total_boxes: plMatch ? plMatch.totalBoxes : (sourceMatch ? sourceMatch.totalBoxes : 0),
+      total_boxes: 1,
       status,
       note,
       out_qty: parsed.quantity,

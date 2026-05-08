@@ -570,34 +570,10 @@ export default function Outbound() {
       
       const qrCodes = parsedItems.map(p => p.qrCode);
 
-      // Identify duplicates
-      const existingQRSets = new Set(scannedItems.map(s => s.qrCode));
-      const seenInManual = new Set<string>();
-      const duplicateCodes: string[] = [];
-      const uniqueNewItems: any[] = [];
-
-      parsedItems.forEach(item => {
-        if (existingQRSets.has(item.qrCode) || seenInManual.has(item.qrCode)) {
-          duplicateCodes.push(item.qrCode);
-        } else {
-          seenInManual.add(item.qrCode);
-          uniqueNewItems.push(item);
-        }
-      });
-
-      let itemsToActuallyProcess = uniqueNewItems;
-
-      if (duplicateCodes.length > 0) {
-        const confirmMsg = `Phát hiện ${duplicateCodes.length} mã QR bị trùng lặp:\n${duplicateCodes.slice(0, 10).join('\n')}${duplicateCodes.length > 10 ? '\n...' : ''}\n\nBạn có muốn XÓA TRÙNG LẶP và tiếp tục xử lý các mã duy nhất không?`;
-        if (!window.confirm(confirmMsg)) {
-          setLoading(false);
-          setIsLoading(false);
-          return;
-        }
-      }
+      let itemsToActuallyProcess = parsedItems;
 
       if (itemsToActuallyProcess.length === 0) {
-        setMessage({ type: 'error', text: 'Không có dữ liệu mới để xử lý (tất cả đều bị trùng lặp).' });
+        setMessage({ type: 'error', text: 'Không có dữ liệu mới để xử lý.' });
         setLoading(false);
         setIsLoading(false);
         return;
@@ -1292,8 +1268,6 @@ export default function Outbound() {
   const handleScan = async (qrData: string) => {
     const parsed = parseQRCode(qrData);
     
-    if (scannedItems.some(item => item.qrCode === parsed.qrCode)) return;
-
     // 1. Find in Inventory (Local lookup for speed)
     const inventory = inventoryBalances.find(inv => inv.qr_code === parsed.qrCode);
 

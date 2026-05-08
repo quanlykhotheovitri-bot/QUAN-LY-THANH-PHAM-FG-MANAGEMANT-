@@ -67,9 +67,7 @@ export default function Outbound() {
   const [outboundData, setOutboundData] = useState<any[]>([]);
   const [selectedOutbound, setSelectedOutbound] = useState<Set<string>>(new Set());
   const [outboundLoading, setOutboundLoading] = useState(false);
-  const [outboundPage, setOutboundPage] = useState(1);
   const [outboundTotal, setOutboundTotal] = useState(0);
-  const outboundPageSize = 50;
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -107,7 +105,7 @@ export default function Outbound() {
   const [outboundStatusFilter, setOutboundStatusFilter] = useState<'ALL' | 'OK' | 'Wrong' | 'THIEU' | 'DU'>('ALL');
 
   useEffect(() => {
-    setOutboundPage(1);
+    // Reset selection when tab changes
   }, [dataSubTab, activeTab]);
 
   useEffect(() => {
@@ -115,7 +113,7 @@ export default function Outbound() {
     fetchInventoryBalances();
     fetchCurrentPLItems();
     fetchOutboundData();
-  }, [activeTab, outboundPage, dataSubTab, outboundSearch, startDate, endDate]);
+  }, [activeTab, dataSubTab, outboundSearch, startDate, endDate]);
 
   useEffect(() => {
     fetchCurrentScannedItems();
@@ -166,7 +164,7 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    let result = enrichedScannedItems;
+    let result = enrichedScannedItems.filter(item => !item.isSaved);
     
     // Search filter
     if (scannedSearch.trim()) {
@@ -1171,35 +1169,53 @@ export default function Outbound() {
   async function fetchOutboundData() {
     setOutboundLoading(true);
     setIsLoading(true);
-    const from = (outboundPage - 1) * outboundPageSize;
-    const to = from + outboundPageSize - 1;
 
-    let query = supabase
-      .from('outbound_transactions')
-      .select('*', { count: 'exact' })
-      .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
+    try {
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000;
 
-    if (outboundSearch.trim()) {
-      query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%,pl_no.ilike.%${outboundSearch.trim()}%`);
-    }
+      while (hasMore) {
+        let query = supabase
+          .from('outbound_transactions')
+          .select('*', { count: 'exact' })
+          .eq('type', dataSubTab === 'scan' ? 'SCAN' : 'PL');
 
-    if (startDate) {
-      query = query.gte('created_at', `${startDate}T00:00:00`);
-    }
-    if (endDate) {
-      query = query.lte('created_at', `${endDate}T23:59:59`);
-    }
+        if (outboundSearch.trim()) {
+          query = query.or(`so.ilike.%${outboundSearch.trim()}%,rpro.ilike.%${outboundSearch.trim()}%,kh.ilike.%${outboundSearch.trim()}%,pl_no.ilike.%${outboundSearch.trim()}%`);
+        }
 
-    const { data, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (data) {
-      setOutboundData(data);
-      if (count !== null) setOutboundTotal(count);
+        if (startDate) {
+          query = query.gte('created_at', `${startDate}T00:00:00`);
+        }
+        if (endDate) {
+          query = query.lte('created_at', `${endDate}T23:59:59`);
+        }
+
+        const { data, count, error } = await query
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (count !== null) setOutboundTotal(count);
+          if (data.length < limit) hasMore = false;
+          else offset += limit;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setOutboundData(allData);
+    } catch (error: any) {
+      console.error('Error fetching outbound data:', error);
+    } finally {
+      setOutboundLoading(false);
+      setIsLoading(false);
     }
-    setOutboundLoading(false);
-    setIsLoading(false);
   }
 
   const deleteOutbound = async (id: string) => {
@@ -2333,11 +2349,6 @@ export default function Outbound() {
                 <div className="p-4 md:p-6 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-blue-600 shadow-md">
                   <h2 className="text-lg font-bold text-white uppercase tracking-tight">
                     Scan Xuất {scannedStatusFilter !== 'ALL' || scannedSearch ? `(${filteredScannedItems.length}/${enrichedScannedItems.length})` : `(${enrichedScannedItems.length})`}
-                    {enrichedScannedItems.some(item => item.isSaved) && (
-                      <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-normal italic">
-                        (Bao gồm dữ liệu đã lưu)
-                      </span>
-                    )}
                   </h2>
                   
                   <div className="flex-1 max-w-md relative flex gap-2">
@@ -2404,7 +2415,7 @@ export default function Outbound() {
                 </div>
 
                 {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
+                <div className="hidden md:block overflow-x-auto max-h-[calc(100vh-350px)] overflow-y-auto">
                   <table className="w-full text-left border-collapse border border-slate-200">
                     <thead>
                       <tr className="bg-[#002060] text-white">
@@ -3044,9 +3055,9 @@ export default function Outbound() {
 
           <div className="bg-white rounded-2xl border-2 border-orange-600 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-orange-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h2 className="text-lg font-bold text-orange-900">Lịch sử xuất kho (DATA XUẤT KHO)</h2>
+              <h2 className="text-lg font-bold text-orange-900 uppercase">Lịch sử xuất kho {`(${outboundData.length}/${outboundTotal})`}</h2>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[calc(100vh-300px)] overflow-y-auto">
               <table className="w-full text-left border-collapse border border-slate-200">
                 <thead>
                   <tr className="bg-[#002060] text-white">
@@ -3175,32 +3186,6 @@ export default function Outbound() {
                     </tbody>
               </table>
             </div>
-            {outboundData.length > 0 && (
-              <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t-2 border-slate-200">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Hiển thị {Math.min(outboundTotal, (outboundPage - 1) * outboundPageSize + 1)}-{Math.min(outboundTotal, outboundPage * outboundPageSize)} trong {outboundTotal}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setOutboundPage(prev => Math.max(1, prev - 1))}
-                    disabled={outboundPage === 1}
-                    className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-                  >
-                    TRƯỚC
-                  </button>
-                  <div className="flex items-center px-4 bg-white border-2 border-slate-200 rounded-xl text-xs font-black">
-                    TRANG {outboundPage} / {Math.ceil(outboundTotal / outboundPageSize) || 1}
-                  </div>
-                  <button
-                    onClick={() => setOutboundPage(prev => Math.min(Math.ceil(outboundTotal / outboundPageSize), prev + 1))}
-                    disabled={outboundPage === Math.ceil(outboundTotal / outboundPageSize) || outboundTotal === 0}
-                    className="px-4 py-2 bg-white border-2 border-slate-200 rounded-xl text-xs font-black disabled:opacity-50 hover:bg-slate-50 transition-all"
-                  >
-                    SAU
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

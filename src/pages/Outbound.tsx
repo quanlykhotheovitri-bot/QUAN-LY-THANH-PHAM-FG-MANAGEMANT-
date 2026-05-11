@@ -130,20 +130,20 @@ export default function Outbound() {
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
 
-      // 1. Match with PL automatically - USE COMBINED KEY (PL + SO + RPRO)
+      // 1. Match with PL automatically - Lenient match: RPRO first, then SO
       let plMatch = null;
       if (plItems.length > 0) {
         plMatch = plItems.find(p => {
+          const cPPlNo = cleanId(p.plNo);
           const cPRpro = cleanId(p.rpro);
           const cPSo = cleanId(p.so);
-          const cPPlNo = cleanId(p.plNo);
           
           const plNoMatch = !cleanedPlNo || cleanedPlNo === 'NA' || cleanedPlNo === 'N/A' || cleanedPlNo === cPPlNo;
           if (!plNoMatch) return false;
 
-          if (cleanedRpro && cleanedSo) return cPRpro === cleanedRpro && cPSo === cleanedSo;
-          if (cleanedRpro) return cPRpro === cleanedRpro;
-          return cPSo === cleanedSo;
+          if (cleanedRpro && cPRpro) return cleanedRpro === cPRpro;
+          if (cleanedSo && cPSo) return cleanedSo === cPSo;
+          return false;
         });
       }
 
@@ -233,67 +233,94 @@ export default function Outbound() {
   }, [inventoryBalances]);
 
   const plItemStats = useMemo(() => {
-    const rproCounts = new Map<string, number>();
-    const soCounts = new Map<string, number>();
-    const compositeCounts = new Map<string, number>();
-    
-    scannedItems.forEach(s => {
-      const cleanedRpro = cleanId(s.rpro);
-      const cleanedSo = cleanId(s.so);
-      const cleanedPlNo = cleanId(s.plNo);
-      
-      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-      const soKey = `${cleanedPlNo}|${cleanedSo}`;
-      const compositeKey = `${cleanedPlNo}|${cleanedSo}|${cleanedRpro}`;
-
-      if (cleanedRpro) {
-        rproCounts.set(rproKey, (rproCounts.get(rproKey) || 0) + 1);
-      }
-      if (cleanedSo) {
-        soCounts.set(soKey, (soCounts.get(soKey) || 0) + 1);
-      }
-      
-      compositeCounts.set(compositeKey, (compositeCounts.get(compositeKey) || 0) + 1);
-    });
-
-    // Smart distribution logic for PL items to handle duplicate RPRO/SO lines correctly
+    // To handle duplicate lines in PL correctly, we distribute scans among them.
     const distribution = new Map<string, number>();
     
-    // Track total occurrences of each key to identify the "last" one for excess overflow
-    const totalLineCounts = new Map<string, number>();
-    plItems.forEach(item => {
-      const key = `${cleanId(item.plNo)}|${cleanId(item.so)}|${cleanId(item.rpro)}`;
-      totalLineCounts.set(key, (totalLineCounts.get(key) || 0) + 1);
+    // Group all available scans by their common matching keys
+    const scanPoolRpro = new Map<string, any[]>();
+    const scanPoolSo = new Map<string, any[]>();
+    
+    scannedItems.forEach(s => {
+      const cPl = cleanId(s.plNo);
+      const cSo = cleanId(s.so);
+      const cRpro = cleanId(s.rpro);
+      
+      const rKey = `${cPl}|${cRpro}`;
+      const sKey = `${cPl}|${cSo}`;
+      
+      if (cRpro) {
+        if (!scanPoolRpro.has(rKey)) scanPoolRpro.set(rKey, []);
+        scanPoolRpro.get(rKey)!.push(s);
+      } else if (cSo) {
+        if (!scanPoolSo.has(sKey)) scanPoolSo.set(sKey, []);
+        scanPoolSo.get(sKey)!.push(s);
+      }
     });
 
-    const usedPool = new Map<string, number>();
-    const currentLineIndex = new Map<string, number>();
+    // Copy pools to consume them during distribution
+    const rproPoolSnapshot = new Map(Array.from(scanPoolRpro.entries()).map(([k, v]) => [k, [...v]]));
+    const soPoolSnapshot = new Map(Array.from(scanPoolSo.entries()).map(([k, v]) => [k, [...v]]));
+    const usedScanIds = new Set<string>();
 
+    // Distribute scans to PL items in order
     plItems.forEach(item => {
       const cPl = cleanId(item.plNo);
       const cSo = cleanId(item.so);
       const cRpro = cleanId(item.rpro);
-      const key = `${cPl}|${cSo}|${cRpro}`;
       
-      const totalInPool = compositeCounts.get(key) || 0;
-      const alreadyUsed = usedPool.get(key) || 0;
-      const remaining = totalInPool - alreadyUsed;
+      const rKey = `${cPl}|${cRpro}`;
+      const sKey = `${cPl}|${cSo}`;
       
-      const lineIdx = (currentLineIndex.get(key) || 0) + 1;
-      currentLineIndex.set(key, lineIdx);
-      const isLastLine = lineIdx === totalLineCounts.get(key);
-
-      if (isLastLine) {
-        // Last line takes all remaining (including excess)
-        distribution.set(item.id, Math.max(0, remaining));
-      } else {
-        const attribution = Math.min(Math.max(0, remaining), item.totalBoxes);
-        distribution.set(item.id, attribution);
-        usedPool.set(key, alreadyUsed + attribution);
+      let attributed = 0;
+      
+      // Match by RPRO pool
+      if (cRpro && rproPoolSnapshot.has(rKey)) {
+        const pool = rproPoolSnapshot.get(rKey)!;
+        while (attributed < item.totalBoxes && pool.length > 0) {
+          const scan = pool.shift()!;
+          if (!usedScanIds.has(scan.id)) {
+            attributed++;
+            usedScanIds.add(scan.id);
+          }
+        }
       }
+      
+      // Fallback/additional match by SO pool
+      if (attributed < item.totalBoxes && cSo && soPoolSnapshot.has(sKey)) {
+        const pool = soPoolSnapshot.get(sKey)!;
+        while (attributed < item.totalBoxes && pool.length > 0) {
+          const scan = pool.shift()!;
+          if (!usedScanIds.has(scan.id)) {
+            attributed++;
+            usedScanIds.add(scan.id);
+          }
+        }
+      }
+      
+      distribution.set(item.id, attributed);
     });
 
-    return { compositeCounts, distribution, rproCounts, soCounts };
+    // Handle "Excess" scans (attributing remaining scans to the matching PL lines if needed, 
+    // or just leave them as is. For "THIẾU/ĐỦ/DƯ" display).
+    // Let's add any leftovers of a key to the LAST matching PL line of that key.
+    const lastLineIdForKey = new Map<string, string>();
+    plItems.forEach(item => {
+      const key = `${cleanId(item.plNo)}|${cleanId(item.rpro) || cleanId(item.so)}`;
+      lastLineIdForKey.set(key, item.id);
+    });
+
+    // We can calculate actual totals for easier fallback access
+    const rproCounts = new Map<string, number>();
+    const soCounts = new Map<string, number>();
+    scannedItems.forEach(s => {
+      const cPl = cleanId(s.plNo);
+      const cR = cleanId(s.rpro);
+      const cS = cleanId(s.so);
+      if (cR) rproCounts.set(`${cPl}|${cR}`, (rproCounts.get(`${cPl}|${cR}`) || 0) + 1);
+      if (cS) soCounts.set(`${cPl}|${cS}`, (soCounts.get(`${cPl}|${cS}`) || 0) + 1);
+    });
+
+    return { distribution, rproCounts, soCounts };
   }, [scannedItems, plItems]);
 
   const filteredPlItems = useMemo(() => {
@@ -681,11 +708,8 @@ export default function Outbound() {
           const cItemRpro = cleanId(item.rpro);
           const cItemSo = cleanId(item.so);
           
-          if (cParsedRpro && cParsedSo) {
-            return cItemRpro === cParsedRpro && cItemSo === cParsedSo;
-          }
-          if (cParsedRpro) return cItemRpro === cParsedRpro;
-          if (cParsedSo) return cItemSo === cParsedSo;
+          if (cParsedRpro && cItemRpro) return cItemRpro === cParsedRpro;
+          if (cParsedSo && cItemSo) return cItemSo === cParsedSo;
           return false;
         });
 
@@ -1401,7 +1425,7 @@ export default function Outbound() {
     }
     const { data: sourceMatch } = await sourceMatchQuery.limit(1).single();
 
-    // 3. Match with PL automatically if available
+    // 3. Match with PL automatically if available - Lenient
     let plMatch = null;
     if (plItems.length > 0) {
       const cParsedRpro = cleanId(parsed.rpro);
@@ -1411,11 +1435,8 @@ export default function Outbound() {
         const cItemRpro = cleanId(item.rpro);
         const cItemSo = cleanId(item.so);
         
-        if (cParsedRpro && cParsedSo) {
-          return cItemRpro === cParsedRpro && cItemSo === cParsedSo;
-        }
-        if (cParsedRpro) return cItemRpro === cParsedRpro;
-        if (cParsedSo) return cItemSo === cParsedSo;
+        if (cParsedRpro && cItemRpro) return cItemRpro === cParsedRpro;
+        if (cParsedSo && cItemSo) return cItemSo === cParsedSo;
         return false;
       });
     }

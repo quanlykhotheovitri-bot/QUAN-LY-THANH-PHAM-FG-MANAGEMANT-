@@ -169,7 +169,8 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    let result = enrichedScannedItems;
+    // Only show items that are NOT saved/confirmed yet in the Scan tab
+    let result = enrichedScannedItems.filter(item => !item.isSaved);
     
     // Search filter
     if (scannedSearch.trim()) {
@@ -337,7 +338,7 @@ export default function Outbound() {
       let offset = 0;
       const limit = 1000;
 
-      while (hasMore && allData.length < 10000) {
+      while (hasMore && allData.length < 30000) {
         const { data, error } = await supabase
           .from('current_scanned_items')
           .select('*')
@@ -696,23 +697,47 @@ export default function Outbound() {
   };
 
   const handleSaveScannedToHistory = async () => {
-    const unsavedItems = enrichedScannedItems.filter(item => !item.isSaved);
-    if (unsavedItems.length === 0) return;
-    
     setLoading(true);
     setIsLoading(true);
     try {
-      // Chunking for large datasets to avoid Supabase batch size limits
+      // Fetch ALL unsaved items from DB
+      let allUnsavedData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const fetchLimit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('current_scanned_items')
+          .select('*')
+          .eq('is_saved', false)
+          .range(offset, offset + fetchLimit - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allUnsavedData = [...allUnsavedData, ...data];
+          offset += data.length;
+          if (data.length < fetchLimit) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allUnsavedData.length === 0) {
+        setMessage({ type: 'warning', text: 'Không có dữ liệu mới để lưu.' });
+        return;
+      }
+      
       const chunkSize = 200;
-      const itemsToInsert = unsavedItems.map(item => ({
+      const itemsToInsert = allUnsavedData.map(item => ({
         type: 'SCAN',
-        qr_code: item.qrCode,
+        qr_code: item.qr_code,
         so: item.so,
         rpro: item.rpro,
         kh: item.kh,
-        pl_no: item.plNo,
-        quantity: item.outQty,
-        location_path: item.locationPath,
+        pl_no: item.pl_no,
+        quantity: item.out_qty,
+        location_path: item.location_path,
         status: item.status === 'OK' ? 'completed' : 'warning',
         note: item.note,
         device_info: navigator.userAgent
@@ -724,8 +749,8 @@ export default function Outbound() {
         if (txError) throw txError;
       }
 
-      // Update is_saved in current_scanned_items (batch update is usually safer than massive in() for thousands)
-      const idsToUpdate = unsavedItems.map(item => item.id);
+      // Update is_saved in current_scanned_items
+      const idsToUpdate = allUnsavedData.map(item => item.id);
       for (let i = 0; i < idsToUpdate.length; i += chunkSize) {
         const chunkIds = idsToUpdate.slice(i, i + chunkSize);
         const { error: updateError } = await supabase
@@ -735,7 +760,7 @@ export default function Outbound() {
         if (updateError) throw updateError;
       }
 
-      setMessage({ type: 'success', text: `Đã lưu ${unsavedItems.length} mã vào Data xuất.` });
+      setMessage({ type: 'success', text: `Đã lưu ${allUnsavedData.length} mã vào Data xuất.` });
       await fetchCurrentScannedItems();
     } catch (error: any) {
       console.error('Save error:', error);
@@ -1387,23 +1412,50 @@ export default function Outbound() {
   };
 
   const handleConfirmOutbound = async () => {
-    if (enrichedScannedItems.length === 0) return;
     setLoading(true);
     try {
+      // Fetch ALL unsaved items from DB to ensure we don't miss anything that was "hidden" by the display limit
+      let allUnsavedData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const fetchLimit = 1000;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('current_scanned_items')
+          .select('*')
+          .eq('is_saved', false)
+          .range(offset, offset + fetchLimit - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allUnsavedData = [...allUnsavedData, ...data];
+          offset += data.length;
+          if (data.length < fetchLimit) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allUnsavedData.length === 0) {
+        setMessage({ type: 'warning', text: 'Không có dữ liệu mới để xuất kho.' });
+        return;
+      }
+
       const payload = {
         device_info: navigator.userAgent,
-        items: enrichedScannedItems.map(item => ({
-          qrCode: item.qrCode,
+        items: allUnsavedData.map(item => ({
+          qrCode: item.qr_code,
           so: item.so,
           rpro: item.rpro,
           kh: item.kh,
-          plNo: item.plNo,
-          outQty: item.outQty,
-          locationPath: item.locationPath,
+          plNo: item.pl_no,
+          outQty: item.out_qty,
+          locationPath: item.location_path,
           status: item.status,
           note: item.note,
           inventoryId: item.inventory_id,
-          isSaved: item.isSaved
+          isSaved: false
         }))
       };
 
@@ -1411,18 +1463,15 @@ export default function Outbound() {
 
       if (error) throw error;
 
-      // Mark current scanned items as saved in database instead of deleting
-      const unsavedItems = enrichedScannedItems.filter(item => !item.isSaved);
-      if (unsavedItems.length > 0) {
-        const chunkSize = 200;
-        const idsToUpdate = unsavedItems.map(item => item.id);
-        for (let i = 0; i < idsToUpdate.length; i += chunkSize) {
-          const chunk = idsToUpdate.slice(i, i + chunkSize);
-          await supabase.from('current_scanned_items').update({ is_saved: true }).in('id', chunk);
-        }
+      // Mark all these items as saved in database
+      const chunkSize = 200;
+      const idsToUpdate = allUnsavedData.map(item => item.id);
+      for (let i = 0; i < idsToUpdate.length; i += chunkSize) {
+        const chunk = idsToUpdate.slice(i, i + chunkSize);
+        await supabase.from('current_scanned_items').update({ is_saved: true }).in('id', chunk);
       }
 
-      setMessage({ type: 'success', text: `Đã xuất kho thành công ${unsavedItems.length} kiện hàng.` });
+      setMessage({ type: 'success', text: `Đã xuất kho thành công ${allUnsavedData.length} kiện hàng.` });
       await fetchCurrentScannedItems();
       setSelectedScanned(new Set());
       clearAppCache();

@@ -41,9 +41,9 @@ export default function Outbound() {
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
     return id.toString()
-      .replace(/\s/g, '') // Remove all whitespace characters including spaces, tabs, newlines
-      .replace(/[\u00A0\uFEFF\u200B-\u200D]/g, '') // Remove special invisible/non-breaking characters
-      .replace(/[–—]/g, '-') // Normalize en-dash and em-dash to hyphen
+      .replace(/\s+/g, '') // Remove ALL whitespaces (spaces, tabs, newlines, etc.)
+      .replace(/[\u00A0\uFEFF\u200B-\u200D]/g, '') // Remove special invisible characters
+      .replace(/[–—]/g, '-') // Normalize dashes
       .trim()
       .toUpperCase();
   };
@@ -593,6 +593,8 @@ export default function Outbound() {
         ...inv,
         so: cleanId(inv.so),
         rpro: cleanId(inv.rpro),
+        plNo: cleanId(inv.pl_no || ''),
+        location_path: inv.location_path?.trim() || 'N/A'
       }));
       setInventoryBalances(trimmedData);
     } catch (error: any) {

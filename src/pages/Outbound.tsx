@@ -233,12 +233,8 @@ export default function Outbound() {
   }, [inventoryBalances]);
 
   const plItemStats = useMemo(() => {
-    // To handle duplicate lines in PL correctly, we distribute scans among them.
-    const distribution = new Map<string, number>();
-    
-    // Group all available scans by their common matching keys
-    const scanPoolRpro = new Map<string, any[]>();
-    const scanPoolSo = new Map<string, any[]>();
+    const rproCounts = new Map<string, number>();
+    const soCounts = new Map<string, number>();
     
     scannedItems.forEach(s => {
       const cPl = cleanId(s.plNo);
@@ -249,79 +245,15 @@ export default function Outbound() {
       const sKey = `${cPl}|${cSo}`;
       
       if (cRpro) {
-        if (!scanPoolRpro.has(rKey)) scanPoolRpro.set(rKey, []);
-        scanPoolRpro.get(rKey)!.push(s);
-      } else if (cSo) {
-        if (!scanPoolSo.has(sKey)) scanPoolSo.set(sKey, []);
-        scanPoolSo.get(sKey)!.push(s);
+        rproCounts.set(rKey, (rproCounts.get(rKey) || 0) + 1);
+      }
+      if (cSo) {
+        soCounts.set(sKey, (soCounts.get(sKey) || 0) + 1);
       }
     });
 
-    // Copy pools to consume them during distribution
-    const rproPoolSnapshot = new Map(Array.from(scanPoolRpro.entries()).map(([k, v]) => [k, [...v]]));
-    const soPoolSnapshot = new Map(Array.from(scanPoolSo.entries()).map(([k, v]) => [k, [...v]]));
-    const usedScanIds = new Set<string>();
-
-    // Distribute scans to PL items in order
-    plItems.forEach(item => {
-      const cPl = cleanId(item.plNo);
-      const cSo = cleanId(item.so);
-      const cRpro = cleanId(item.rpro);
-      
-      const rKey = `${cPl}|${cRpro}`;
-      const sKey = `${cPl}|${cSo}`;
-      
-      let attributed = 0;
-      
-      // Match by RPRO pool
-      if (cRpro && rproPoolSnapshot.has(rKey)) {
-        const pool = rproPoolSnapshot.get(rKey)!;
-        while (attributed < item.totalBoxes && pool.length > 0) {
-          const scan = pool.shift()!;
-          if (!usedScanIds.has(scan.id)) {
-            attributed++;
-            usedScanIds.add(scan.id);
-          }
-        }
-      }
-      
-      // Fallback/additional match by SO pool
-      if (attributed < item.totalBoxes && cSo && soPoolSnapshot.has(sKey)) {
-        const pool = soPoolSnapshot.get(sKey)!;
-        while (attributed < item.totalBoxes && pool.length > 0) {
-          const scan = pool.shift()!;
-          if (!usedScanIds.has(scan.id)) {
-            attributed++;
-            usedScanIds.add(scan.id);
-          }
-        }
-      }
-      
-      distribution.set(item.id, attributed);
-    });
-
-    // Handle "Excess" scans (attributing remaining scans to the matching PL lines if needed, 
-    // or just leave them as is. For "THIẾU/ĐỦ/DƯ" display).
-    // Let's add any leftovers of a key to the LAST matching PL line of that key.
-    const lastLineIdForKey = new Map<string, string>();
-    plItems.forEach(item => {
-      const key = `${cleanId(item.plNo)}|${cleanId(item.rpro) || cleanId(item.so)}`;
-      lastLineIdForKey.set(key, item.id);
-    });
-
-    // We can calculate actual totals for easier fallback access
-    const rproCounts = new Map<string, number>();
-    const soCounts = new Map<string, number>();
-    scannedItems.forEach(s => {
-      const cPl = cleanId(s.plNo);
-      const cR = cleanId(s.rpro);
-      const cS = cleanId(s.so);
-      if (cR) rproCounts.set(`${cPl}|${cR}`, (rproCounts.get(`${cPl}|${cR}`) || 0) + 1);
-      if (cS) soCounts.set(`${cPl}|${cS}`, (soCounts.get(`${cPl}|${cS}`) || 0) + 1);
-    });
-
-    return { distribution, rproCounts, soCounts };
-  }, [scannedItems, plItems]);
+    return { rproCounts, soCounts };
+  }, [scannedItems]);
 
   const filteredPlItems = useMemo(() => {
     let result = plItems;
@@ -347,8 +279,9 @@ export default function Outbound() {
         const cleanedSo = cleanId(item.so);
         const cleanedRpro = cleanId(item.rpro);
         const cleanedPlNo = cleanId(item.plNo);
-        
-        const scanCount = plItemStats.distribution.get(item.id) || 0;
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
         const diff = item.totalBoxes - scanCount;
         
         if (plStatusFilter === 'OK') return diff === 0;
@@ -366,7 +299,9 @@ export default function Outbound() {
       const cleanedSo = cleanId(item.so);
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
-      const scanCount = plItemStats.distribution.get(item.id) || 0;
+      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+      const soKey = `${cleanedPlNo}|${cleanedSo}`;
+      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
       
       return {
         totalBoxes: acc.totalBoxes + (Number(item.totalBoxes) || 0),
@@ -582,15 +517,24 @@ export default function Outbound() {
   };
 
   const exportCurrentPL = (format: 'xlsx' | 'csv') => {
-    const data = plItems.map(item => ({
-      'OVN Order No': item.so,
-      'RPRO': item.rpro,
-      'KHÁCH HÀNG': item.kh,
-      'PL No': item.plNo,
-      'Total Box': item.totalBoxes,
-      'Scan Xuất': plItemStats.distribution.get(item.id) || 0,
-      'Status': (plItemStats.distribution.get(item.id) || 0) >= (item.totalBoxes || 0) ? 'ĐỦ' : 'THIẾU'
-    }));
+    const data = plItems.map(item => {
+      const cleanedSo = cleanId(item.so);
+      const cleanedRpro = cleanId(item.rpro);
+      const cleanedPlNo = cleanId(item.plNo);
+      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+      const soKey = `${cleanedPlNo}|${cleanedSo}`;
+      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+
+      return {
+        'OVN Order No': item.so,
+        'RPRO': item.rpro,
+        'KHÁCH HÀNG': item.kh,
+        'PL No': item.plNo,
+        'Total Box': item.totalBoxes,
+        'Scan Xuất': scanCount,
+        'Status': scanCount >= (item.totalBoxes || 0) ? 'ĐỦ' : 'THIẾU'
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -1754,7 +1698,9 @@ export default function Outbound() {
         const cleanedSo = cleanId(item.so);
         const cleanedRpro = cleanId(item.rpro);
         const cleanedPlNo = cleanId(item.plNo);
-        const scanCount = plItemStats.distribution.get(item.id) || 0;
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
         const diff = item.totalBoxes - scanCount;
         let statusText = 'OK';
         if (item.status === 'Chưa xuất') {
@@ -1805,8 +1751,10 @@ export default function Outbound() {
         const cleanedSo = cleanId(plItem.so);
         const cleanedRpro = cleanId(plItem.rpro);
         const cleanedPlNo = cleanId(plItem.plNo);
+        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+        const soKey = `${cleanedPlNo}|${cleanedSo}`;
         
-        const scanCount = plItemStats.distribution.get(plItem.id) || 0;
+        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
         const diff = plItem.totalBoxes - scanCount;
 
         // OK or Dư (diff <= 0) - subtract inventory based on real scans
@@ -1936,7 +1884,11 @@ export default function Outbound() {
 
       plGroupsInCurrent.forEach((items, plNo) => {
         const allOk = items.every(item => {
-          const scanCount = plItemStats.distribution.get(item.id) || 0;
+          const cleanedSo = cleanId(item.so);
+          const cleanedRpro = cleanId(item.rpro);
+          const rproKey = `${plNo}|${cleanedRpro}`;
+          const soKey = `${plNo}|${cleanedSo}`;
+          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
           return scanCount === item.totalBoxes;
         });
         if (allOk && items.length > 0) okPlNames.add(plNo);
@@ -2205,6 +2157,8 @@ export default function Outbound() {
       const cleanedSo = cleanId(item.so);
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
+      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+      const soKey = `${cleanedPlNo}|${cleanedSo}`;
       
       const locations = new Set<string>();
       if (cleanedRpro) {
@@ -2217,7 +2171,7 @@ export default function Outbound() {
       }
       
       const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
-      const scanCount = plItemStats.distribution.get(item.id) || 0;
+      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
       
       plGroups.get(plNo)?.push({
         ...item,
@@ -3030,7 +2984,11 @@ export default function Outbound() {
                           filteredPlItems.map((item, index) => {
                           const cleanedSo = cleanId(item.so);
                           const cleanedRpro = cleanId(item.rpro);
-                          const scanCount = plItemStats.distribution.get(item.id) || 0;
+                          const cleanedPlNo = cleanId(item.plNo);
+                          const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
+                          const soKey = `${cleanedPlNo}|${cleanedSo}`;
+
+                          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
 
                           const diff = item.totalBoxes - scanCount;
                           const isDropped = item.status === 'Chưa xuất' || item.kh?.includes('[CHƯA XUẤT]');

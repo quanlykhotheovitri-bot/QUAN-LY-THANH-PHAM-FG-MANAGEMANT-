@@ -130,21 +130,29 @@ export default function Outbound() {
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
 
-      // 1. Match with PL automatically - USE COMBINED KEY (PL + SO/RPRO)
+      // 1. Match with PL automatically - USE COMBINED KEY (PL + SO + RPRO)
       let plMatch = null;
       if (plItems.length > 0) {
         plMatch = plItems.find(p => {
-          const pPlNo = cleanId(p.plNo);
-          // Only match if PL No matches or if we are in "global" mode (but ideally strict)
-          const plMatches = !cleanedPlNo || !pPlNo || cleanedPlNo === pPlNo;
-          if (!plMatches) return false;
+          const cPRpro = cleanId(p.rpro);
+          const cPSo = cleanId(p.so);
+          const cPPlNo = cleanId(p.plNo);
+          
+          const plNoMatch = !cleanedPlNo || cleanedPlNo === 'NA' || cleanedPlNo === 'N/A' || cleanedPlNo === cPPlNo;
+          if (!plNoMatch) return false;
 
-          return (cleanedRpro && p.rpro ? cleanId(p.rpro) === cleanedRpro : cleanId(p.so) === cleanedSo);
+          if (cleanedRpro && cleanedSo) return cPRpro === cleanedRpro && cPSo === cleanedSo;
+          if (cleanedRpro) return cPRpro === cleanedRpro;
+          return cPSo === cleanedSo;
         });
       }
 
       // 2. Find in Inventory
-      const inventory = inventoryBalances.find(inv => inv.qr_code === item.qrCode);
+      const inventory = inventoryBalances.find(inv => {
+        const cIRpro = cleanId(inv.rpro);
+        const cISo = cleanId(inv.so);
+        return (cleanedRpro && cIRpro === cleanedRpro) || (!cleanedRpro && cleanedSo && cISo === cleanedSo);
+      });
 
       let status = plMatch ? 'OK' : 'Wrong';
       let note = plMatch ? '' : 'Không khớp danh sách PL';
@@ -227,26 +235,66 @@ export default function Outbound() {
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
     const soCounts = new Map<string, number>();
+    const compositeCounts = new Map<string, number>();
     
     scannedItems.forEach(s => {
       const cleanedRpro = cleanId(s.rpro);
       const cleanedSo = cleanId(s.so);
       const cleanedPlNo = cleanId(s.plNo);
       
-      // Virtual key for RPRO and SO within a PL
       const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
       const soKey = `${cleanedPlNo}|${cleanedSo}`;
-      
+      const compositeKey = `${cleanedPlNo}|${cleanedSo}|${cleanedRpro}`;
+
       if (cleanedRpro) {
         rproCounts.set(rproKey, (rproCounts.get(rproKey) || 0) + 1);
       }
       if (cleanedSo) {
         soCounts.set(soKey, (soCounts.get(soKey) || 0) + 1);
       }
+      
+      compositeCounts.set(compositeKey, (compositeCounts.get(compositeKey) || 0) + 1);
     });
 
-    return { rproCounts, soCounts };
-  }, [scannedItems]);
+    // Smart distribution logic for PL items to handle duplicate RPRO/SO lines correctly
+    const distribution = new Map<string, number>();
+    
+    // Track total occurrences of each key to identify the "last" one for excess overflow
+    const totalLineCounts = new Map<string, number>();
+    plItems.forEach(item => {
+      const key = `${cleanId(item.plNo)}|${cleanId(item.so)}|${cleanId(item.rpro)}`;
+      totalLineCounts.set(key, (totalLineCounts.get(key) || 0) + 1);
+    });
+
+    const usedPool = new Map<string, number>();
+    const currentLineIndex = new Map<string, number>();
+
+    plItems.forEach(item => {
+      const cPl = cleanId(item.plNo);
+      const cSo = cleanId(item.so);
+      const cRpro = cleanId(item.rpro);
+      const key = `${cPl}|${cSo}|${cRpro}`;
+      
+      const totalInPool = compositeCounts.get(key) || 0;
+      const alreadyUsed = usedPool.get(key) || 0;
+      const remaining = totalInPool - alreadyUsed;
+      
+      const lineIdx = (currentLineIndex.get(key) || 0) + 1;
+      currentLineIndex.set(key, lineIdx);
+      const isLastLine = lineIdx === totalLineCounts.get(key);
+
+      if (isLastLine) {
+        // Last line takes all remaining (including excess)
+        distribution.set(item.id, Math.max(0, remaining));
+      } else {
+        const attribution = Math.min(Math.max(0, remaining), item.totalBoxes);
+        distribution.set(item.id, attribution);
+        usedPool.set(key, alreadyUsed + attribution);
+      }
+    });
+
+    return { compositeCounts, distribution, rproCounts, soCounts };
+  }, [scannedItems, plItems]);
 
   const filteredPlItems = useMemo(() => {
     let result = plItems;
@@ -273,10 +321,7 @@ export default function Outbound() {
         const cleanedRpro = cleanId(item.rpro);
         const cleanedPlNo = cleanId(item.plNo);
         
-        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-        const soKey = `${cleanedPlNo}|${cleanedSo}`;
-
-        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+        const scanCount = plItemStats.distribution.get(item.id) || 0;
         const diff = item.totalBoxes - scanCount;
         
         if (plStatusFilter === 'OK') return diff === 0;
@@ -294,9 +339,7 @@ export default function Outbound() {
       const cleanedSo = cleanId(item.so);
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
-      const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-      const soKey = `${cleanedPlNo}|${cleanedSo}`;
-      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+      const scanCount = plItemStats.distribution.get(item.id) || 0;
       
       return {
         totalBoxes: acc.totalBoxes + (Number(item.totalBoxes) || 0),
@@ -518,8 +561,8 @@ export default function Outbound() {
       'KHÁCH HÀNG': item.kh,
       'PL No': item.plNo,
       'Total Box': item.totalBoxes,
-      'Scan Xuất': item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0),
-      'Status': (item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0)) >= (item.totalBoxes || 0) ? 'ĐỦ' : 'THIẾU'
+      'Scan Xuất': plItemStats.distribution.get(item.id) || 0,
+      'Status': (plItemStats.distribution.get(item.id) || 0) >= (item.totalBoxes || 0) ? 'ĐỦ' : 'THIẾU'
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -623,12 +666,28 @@ export default function Outbound() {
 
       const itemsToInsert = itemsToActuallyProcess.map(parsed => {
         const inventory = inventories?.find(i => i.qr_code === parsed.qrCode);
-        const sourceMatch = sourceMatches.find(s => 
-          (parsed.rpro && s.rpro === parsed.rpro) || (parsed.so && s.so === parsed.so)
-        );
-        const plMatch = plItems.find(item => 
-          (parsed.rpro && item.rpro ? item.rpro === parsed.rpro : item.so === parsed.so)
-        );
+        const cParsedRpro = cleanId(parsed.rpro);
+        const cParsedSo = cleanId(parsed.so);
+
+        const sourceMatch = sourceMatches.find(s => {
+          const cSRpro = cleanId(s.rpro);
+          const cSSo = cleanId(s.so);
+          if (cParsedRpro && cParsedSo) return cSRpro === cParsedRpro && cSSo === cParsedSo;
+          if (cParsedRpro) return cSRpro === cParsedRpro;
+          return cSSo === cParsedSo;
+        });
+
+        const plMatch = plItems.find(item => {
+          const cItemRpro = cleanId(item.rpro);
+          const cItemSo = cleanId(item.so);
+          
+          if (cParsedRpro && cParsedSo) {
+            return cItemRpro === cParsedRpro && cItemSo === cParsedSo;
+          }
+          if (cParsedRpro) return cItemRpro === cParsedRpro;
+          if (cParsedSo) return cItemSo === cParsedSo;
+          return false;
+        });
 
         let status = plMatch ? 'OK' : 'Wrong';
         let note = plMatch ? '' : 'Không khớp danh sách PL';
@@ -1345,9 +1404,20 @@ export default function Outbound() {
     // 3. Match with PL automatically if available
     let plMatch = null;
     if (plItems.length > 0) {
-      plMatch = plItems.find(item => 
-        (parsed.rpro && item.rpro ? item.rpro === parsed.rpro : item.so === parsed.so)
-      );
+      const cParsedRpro = cleanId(parsed.rpro);
+      const cParsedSo = cleanId(parsed.so);
+
+      plMatch = plItems.find(item => {
+        const cItemRpro = cleanId(item.rpro);
+        const cItemSo = cleanId(item.so);
+        
+        if (cParsedRpro && cParsedSo) {
+          return cItemRpro === cParsedRpro && cItemSo === cParsedSo;
+        }
+        if (cParsedRpro) return cItemRpro === cParsedRpro;
+        if (cParsedSo) return cItemSo === cParsedSo;
+        return false;
+      });
     }
 
     let status = plMatch ? 'OK' : 'Wrong';
@@ -1663,11 +1733,7 @@ export default function Outbound() {
         const cleanedSo = cleanId(item.so);
         const cleanedRpro = cleanId(item.rpro);
         const cleanedPlNo = cleanId(item.plNo);
-        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-        const soKey = `${cleanedPlNo}|${cleanedSo}`;
-        
-        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
-
+        const scanCount = plItemStats.distribution.get(item.id) || 0;
         const diff = item.totalBoxes - scanCount;
         let statusText = 'OK';
         if (item.status === 'Chưa xuất') {
@@ -1719,9 +1785,7 @@ export default function Outbound() {
         const cleanedRpro = cleanId(plItem.rpro);
         const cleanedPlNo = cleanId(plItem.plNo);
         
-        const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-        const soKey = `${cleanedPlNo}|${cleanedSo}`;
-        const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+        const scanCount = plItemStats.distribution.get(plItem.id) || 0;
         const diff = plItem.totalBoxes - scanCount;
 
         // OK or Dư (diff <= 0) - subtract inventory based on real scans
@@ -1851,11 +1915,7 @@ export default function Outbound() {
 
       plGroupsInCurrent.forEach((items, plNo) => {
         const allOk = items.every(item => {
-          const cleanedSo = cleanId(item.so);
-          const cleanedRpro = cleanId(item.rpro);
-          const rproKey = `${plNo}|${cleanedRpro}`;
-          const soKey = `${plNo}|${cleanedSo}`;
-          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+          const scanCount = plItemStats.distribution.get(item.id) || 0;
           return scanCount === item.totalBoxes;
         });
         if (allOk && items.length > 0) okPlNames.add(plNo);
@@ -2136,7 +2196,7 @@ export default function Outbound() {
       }
       
       const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
-      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(`${cleanedPlNo}|${cleanedRpro}`) || 0) : (plItemStats.soCounts.get(`${cleanedPlNo}|${cleanedSo}`) || 0);
+      const scanCount = plItemStats.distribution.get(item.id) || 0;
       
       plGroups.get(plNo)?.push({
         ...item,
@@ -2949,12 +3009,7 @@ export default function Outbound() {
                           filteredPlItems.map((item, index) => {
                           const cleanedSo = cleanId(item.so);
                           const cleanedRpro = cleanId(item.rpro);
-                          const cleanedPlNo = cleanId(item.plNo);
-                          
-                          const rproKey = `${cleanedPlNo}|${cleanedRpro}`;
-                          const soKey = `${cleanedPlNo}|${cleanedSo}`;
-
-                          const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(rproKey) || 0) : (plItemStats.soCounts.get(soKey) || 0);
+                          const scanCount = plItemStats.distribution.get(item.id) || 0;
 
                           const diff = item.totalBoxes - scanCount;
                           const isDropped = item.status === 'Chưa xuất' || item.kh?.includes('[CHƯA XUẤT]');

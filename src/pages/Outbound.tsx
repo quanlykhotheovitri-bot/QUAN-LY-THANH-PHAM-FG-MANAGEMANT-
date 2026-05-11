@@ -41,8 +41,9 @@ export default function Outbound() {
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
     return id.toString()
-      .replace(/[\s\u00A0\uFEFF]/g, '')
-      .replace(/[–—]/g, '-') // Normalize dashes (en-dash, em-dash to hyphen)
+      .replace(/\s/g, '') // Remove all whitespace characters including spaces, tabs, newlines
+      .replace(/[\u00A0\uFEFF\u200B-\u200D]/g, '') // Remove special invisible/non-breaking characters
+      .replace(/[–—]/g, '-') // Normalize en-dash and em-dash to hyphen
       .trim()
       .toUpperCase();
   };
@@ -204,8 +205,8 @@ export default function Outbound() {
     const soInv = new Map<string, Set<string>>();
     const compositeInv = new Map<string, Set<string>>();
     
+    // Add locations from inventory balances
     inventoryBalances.forEach(inv => {
-      // Still keep the check but realize fetchInventoryBalances already filters
       if (inv.quantity <= 0) return;
       
       const cleanedRpro = cleanId(inv.rpro);
@@ -229,8 +230,26 @@ export default function Outbound() {
       }
     });
 
+    // Also add locations from scanned items to cover items that might be outside the inventory snapshot
+    scannedItems.forEach(item => {
+      const cleanedRpro = cleanId(item.rpro);
+      const cleanedSo = cleanId(item.so);
+      const loc = item.locationPath?.trim() || (item.inventory?.location_path?.trim());
+      
+      if (loc && loc !== 'N/A') {
+        if (cleanedRpro) {
+          if (!rproInv.has(cleanedRpro)) rproInv.set(cleanedRpro, new Set());
+          rproInv.get(cleanedRpro)!.add(loc);
+        }
+        if (cleanedSo) {
+          if (!soInv.has(cleanedSo)) soInv.set(cleanedSo, new Set());
+          soInv.get(cleanedSo)!.add(loc);
+        }
+      }
+    });
+
     return { rproInv, soInv, compositeInv };
-  }, [inventoryBalances]);
+  }, [inventoryBalances, scannedItems]);
 
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
@@ -365,15 +384,15 @@ export default function Outbound() {
 
       const items = uniqueItems.map(item => ({
         id: item.id,
-        qrCode: item.qr_code?.trim() || '',
-        so: item.so?.trim() || '',
-        rpro: item.rpro?.trim() || '',
+        qrCode: cleanId(item.qr_code),
+        so: cleanId(item.so),
+        rpro: cleanId(item.rpro),
         kh: item.kh?.trim() || '',
         totalBoxes: item.total_boxes,
         status: item.status,
         note: item.note,
         outQty: item.out_qty,
-        plNo: item.pl_no?.trim() || '',
+        plNo: cleanId(item.pl_no),
         locationPath: item.location_path?.trim() || '',
         isSaved: item.is_saved,
         date: item.scan_date,
@@ -417,9 +436,9 @@ export default function Outbound() {
 
       setPlItems(uniqueItems.map(item => ({
         id: item.id,
-        plNo: item.pl_no?.trim() || '',
-        so: item.so?.trim() || '',
-        rpro: item.rpro?.trim() || '',
+        plNo: cleanId(item.pl_no),
+        so: cleanId(item.so),
+        rpro: cleanId(item.rpro),
         kh: item.kh?.trim() || '',
         qty: item.qty,
         totalBoxes: item.total_boxes,
@@ -572,8 +591,8 @@ export default function Outbound() {
 
       const trimmedData = uniqueItems.map(inv => ({
         ...inv,
-        so: inv.so?.trim() || '',
-        rpro: inv.rpro?.trim() || '',
+        so: cleanId(inv.so),
+        rpro: cleanId(inv.rpro),
       }));
       setInventoryBalances(trimmedData);
     } catch (error: any) {
@@ -955,9 +974,9 @@ export default function Outbound() {
               seenInThisFile.add(compositeKey);
 
               mapped.push({
-                plNo: currentPlNo,
-                so: soValue,
-                rpro: rproIdx !== -1 ? String(row[rproIdx] || '').trim() : '',
+                plNo: cleanId(currentPlNo),
+                so: cleanId(soValue),
+                rpro: rproIdx !== -1 ? cleanId(String(row[rproIdx] || '')) : '',
                 kh: currentCustomer,
                 qty: parseFloat(String(row[qtyIdx] || '0').replace(/,/g, '')) || 0,
                 totalBoxes: parseInt(String(row[boxIdx] || '0').replace(/,/g, '')) || 0,

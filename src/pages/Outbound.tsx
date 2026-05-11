@@ -39,7 +39,8 @@ export default function Outbound() {
 
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
-    return id.toString().replace(/\s/g, '').toUpperCase();
+    // Remove all whitespace, including non-breaking spaces and other invisible characters
+    return id.toString().replace(/[\s\u00A0\uFEFF]/g, '').trim().toUpperCase();
   };
 
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data' | 'check-pl'>('scan');
@@ -185,6 +186,39 @@ export default function Outbound() {
     return result;
   }, [enrichedScannedItems, scannedSearch, scannedStatusFilter]);
 
+  const plInventoryMap = useMemo(() => {
+    const rproInv = new Map<string, Set<string>>();
+    const soInv = new Map<string, Set<string>>();
+    const compositeInv = new Map<string, Set<string>>();
+    
+    inventoryBalances.forEach(inv => {
+      // Still keep the check but realize fetchInventoryBalances already filters
+      if (inv.quantity <= 0) return;
+      
+      const cleanedRpro = cleanId(inv.rpro);
+      const cleanedSo = cleanId(inv.so);
+      const loc = inv.location_path?.trim() || 'N/A';
+      
+      if (cleanedRpro) {
+        if (!rproInv.has(cleanedRpro)) rproInv.set(cleanedRpro, new Set());
+        rproInv.get(cleanedRpro)!.add(loc);
+      }
+      
+      if (cleanedSo) {
+        if (!soInv.has(cleanedSo)) soInv.set(cleanedSo, new Set());
+        soInv.get(cleanedSo)!.add(loc);
+      }
+      
+      if (cleanedSo && cleanedRpro) {
+        const key = `${cleanedSo}|${cleanedRpro}`;
+        if (!compositeInv.has(key)) compositeInv.set(key, new Set());
+        compositeInv.get(key)!.add(loc);
+      }
+    });
+
+    return { rproInv, soInv, compositeInv };
+  }, [inventoryBalances]);
+
   const plItemStats = useMemo(() => {
     const rproCounts = new Map<string, number>();
     const soCounts = new Map<string, number>();
@@ -206,45 +240,8 @@ export default function Outbound() {
       }
     });
 
-    const rproInv = new Map<string, InventoryBalance>();
-    const soInv = new Map<string, InventoryBalance>();
-    const compositeInv = new Map<string, InventoryBalance>();
-    
-    inventoryBalances.forEach(inv => {
-      if (inv.quantity <= 0) return;
-      
-      const cleanedRpro = cleanId(inv.rpro);
-      const cleanedSo = cleanId(inv.so);
-      const loc = inv.location_path?.trim() || 'N/A';
-      
-      if (cleanedRpro) {
-        if (!rproInv.has(cleanedRpro)) {
-          rproInv.set(cleanedRpro, { ...inv, locations: new Set([loc]) });
-        } else {
-          rproInv.get(cleanedRpro)!.locations!.add(loc);
-        }
-      }
-      
-      if (cleanedSo) {
-        if (!soInv.has(cleanedSo)) {
-          soInv.set(cleanedSo, { ...inv, locations: new Set([loc]) });
-        } else {
-          soInv.get(cleanedSo)!.locations!.add(loc);
-        }
-      }
-
-      if (cleanedSo && cleanedRpro) {
-        const key = `${cleanedSo}|${cleanedRpro}`;
-        if (!compositeInv.has(key)) {
-          compositeInv.set(key, { ...inv, locations: new Set([loc]) });
-        } else {
-          compositeInv.get(key)!.locations!.add(loc);
-        }
-      }
-    });
-
-    return { rproCounts, soCounts, rproInv, soInv, compositeInv };
-  }, [scannedItems, inventoryBalances]);
+    return { rproCounts, soCounts };
+  }, [scannedItems]);
 
   const filteredPlItems = useMemo(() => {
     let result = plItems;
@@ -1615,14 +1612,18 @@ export default function Outbound() {
           statusText = `Dư (${Math.abs(diff)})`;
         }
 
-        const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
-        const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+        const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
+        const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
+        const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
         
         const locations = new Set<string>();
-        if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
-        if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+        if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
+        else {
+          if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
+          if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+        }
         
-        const locationStr = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
+        const locationStr = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
 
         return {
           type: 'PL',
@@ -2059,14 +2060,18 @@ export default function Outbound() {
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
       
-      const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
-      const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+      const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
+      const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
+      const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
       
       const locations = new Set<string>();
-      if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
-      if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+      if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
+      else {
+        if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
+        if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+      }
       
-      const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
+      const location = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
       const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(`${cleanedPlNo}|${cleanedRpro}`) || 0) : (plItemStats.soCounts.get(`${cleanedPlNo}|${cleanedSo}`) || 0);
       
       plGroups.get(plNo)?.push({
@@ -2895,14 +2900,18 @@ export default function Outbound() {
                             }
                           }
 
-                          const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
-                          const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+                          const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
+                          const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
+                          const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
                           
                           const locations = new Set<string>();
-                          if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
-                          if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+                          if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
+                          else {
+                            if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
+                            if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+                          }
                           
-                          const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
+                          const location = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
 
                           return (
                             <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedPlItems.has(item.id) ? 'bg-blue-50/50' : ''}`}>

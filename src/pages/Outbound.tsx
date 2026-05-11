@@ -10,6 +10,7 @@ import {
   AlertCircle, 
   Save, 
   Trash2,
+  Check,
   Package,
   MapPin,
   Search,
@@ -168,7 +169,7 @@ export default function Outbound() {
   }, [scannedItems, plItems, inventoryBalances]);
 
   const filteredScannedItems = useMemo(() => {
-    let result = enrichedScannedItems.filter(item => !item.isSaved);
+    let result = enrichedScannedItems;
     
     // Search filter
     if (scannedSearch.trim()) {
@@ -334,9 +335,9 @@ export default function Outbound() {
       let allData: any[] = [];
       let hasMore = true;
       let offset = 0;
-      const limit = 1000;
+      const limit = 2000;
 
-      while (hasMore) {
+      while (hasMore && allData.length < 10000) {
         const { data, error } = await supabase
           .from('current_scanned_items')
           .select('*')
@@ -2457,6 +2458,7 @@ export default function Outbound() {
                         <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">PL No</th>
                         <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">Total Box</th>
                         <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">STATUS</th>
+                        <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider border border-slate-300 text-center whitespace-nowrap">LƯU?</th>
                         <th className="px-2 py-3 border border-slate-300"></th>
                       </tr>
                     </thead>
@@ -2470,7 +2472,7 @@ export default function Outbound() {
                         </tr>
                       ) : (
                         filteredScannedItems.map((item, index) => (
-                          <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.id) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''}`}>
+                          <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${selectedScanned.has(item.id) ? 'bg-blue-50' : ''} ${item.status === 'Wrong' ? 'bg-yellow-100' : ''} ${item.isSaved ? 'opacity-70 bg-slate-50/50' : ''}`}>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               {isAdmin && (
                                 <input 
@@ -2504,6 +2506,15 @@ export default function Outbound() {
                             </td>
                             <td className={`px-4 py-3 border border-slate-200 text-center text-[11px] font-bold ${item.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'}`}>
                               {item.status}
+                            </td>
+                            <td className="px-4 py-3 border border-slate-200 text-center text-[11px]">
+                              {item.isSaved ? (
+                                <span className="flex items-center justify-center gap-1 text-emerald-600 font-bold">
+                                  <Check className="w-3 h-3" /> ĐÃ LƯU
+                                </span>
+                              ) : (
+                                <span className="text-orange-500 font-bold">CHỜ LƯU</span>
+                              )}
                             </td>
                             <td className="px-2 py-3 border border-slate-200 text-center">
                               <div className="flex items-center justify-center gap-1">

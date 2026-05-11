@@ -39,8 +39,11 @@ export default function Outbound() {
 
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
-    // Remove all whitespace, including non-breaking spaces and other invisible characters
-    return id.toString().replace(/[\s\u00A0\uFEFF]/g, '').trim().toUpperCase();
+    return id.toString()
+      .replace(/[\s\u00A0\uFEFF]/g, '')
+      .replace(/[–—]/g, '-') // Normalize dashes (en-dash, em-dash to hyphen)
+      .trim()
+      .toUpperCase();
   };
 
   const [activeTab, setActiveTab] = useState<'scan' | 'pl' | 'data' | 'check-pl'>('scan');
@@ -1612,18 +1615,17 @@ export default function Outbound() {
           statusText = `Dư (${Math.abs(diff)})`;
         }
 
-        const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
-        const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
-        const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
-        
         const locations = new Set<string>();
-        if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
-        else {
-          if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
-          if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+        if (cleanedRpro) {
+          const rproLocs = plInventoryMap.rproInv.get(cleanedRpro);
+          if (rproLocs) rproLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
+        }
+        if (locations.size === 0 && cleanedSo) {
+          const soLocs = plInventoryMap.soInv.get(cleanedSo);
+          if (soLocs) soLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
         }
         
-        const locationStr = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
+        const locationStr = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
 
         return {
           type: 'PL',
@@ -2060,18 +2062,17 @@ export default function Outbound() {
       const cleanedRpro = cleanId(item.rpro);
       const cleanedPlNo = cleanId(item.plNo);
       
-      const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
-      const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
-      const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
-      
       const locations = new Set<string>();
-      if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
-      else {
-        if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
-        if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+      if (cleanedRpro) {
+        const rproLocs = plInventoryMap.rproInv.get(cleanedRpro);
+        if (rproLocs) rproLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
+      }
+      if (locations.size === 0 && cleanedSo) {
+        const soLocs = plInventoryMap.soInv.get(cleanedSo);
+        if (soLocs) soLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
       }
       
-      const location = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
+      const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
       const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(`${cleanedPlNo}|${cleanedRpro}`) || 0) : (plItemStats.soCounts.get(`${cleanedPlNo}|${cleanedSo}`) || 0);
       
       plGroups.get(plNo)?.push({
@@ -2900,18 +2901,17 @@ export default function Outbound() {
                             }
                           }
 
-                          const invMatchComposite = (cleanedSo && cleanedRpro) ? plInventoryMap.compositeInv.get(`${cleanedSo}|${cleanedRpro}`) : null;
-                          const invMatchRpro = cleanedRpro ? plInventoryMap.rproInv.get(cleanedRpro) : null;
-                          const invMatchSo = cleanedSo ? plInventoryMap.soInv.get(cleanedSo) : null;
-                          
                           const locations = new Set<string>();
-                          if (invMatchComposite) invMatchComposite.forEach(l => locations.add(l));
-                          else {
-                            if (invMatchRpro) invMatchRpro.forEach(l => locations.add(l));
-                            if (invMatchSo) invMatchSo.forEach(l => locations.add(l));
+                          if (cleanedRpro) {
+                            const rproLocs = plInventoryMap.rproInv.get(cleanedRpro);
+                            if (rproLocs) rproLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
+                          }
+                          if (locations.size === 0 && cleanedSo) {
+                            const soLocs = plInventoryMap.soInv.get(cleanedSo);
+                            if (soLocs) soLocs.forEach(l => { if (l && l !== 'N/A') locations.add(l); });
                           }
                           
-                          const location = locations.size > 0 ? Array.from(locations).filter(l => l !== 'N/A').join(', ') || 'N/A' : 'N/A';
+                          const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
 
                           return (
                             <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedPlItems.has(item.id) ? 'bg-blue-50/50' : ''}`}>

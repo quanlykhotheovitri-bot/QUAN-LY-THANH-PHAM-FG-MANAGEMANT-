@@ -41,9 +41,8 @@ export default function Outbound() {
   const cleanId = (id: string | null | undefined) => {
     if (!id) return '';
     return id.toString()
-      .replace(/\s+/g, '') // Remove ALL whitespaces (spaces, tabs, newlines, etc.)
-      .replace(/[\u00A0\uFEFF\u200B-\u200D]/g, '') // Remove special invisible characters
-      .replace(/[–—]/g, '-') // Normalize dashes
+      .replace(/[\s\u00A0\uFEFF\u200B-\u200D\u202F\u205F\u3000\u180E\u2000-\u200A\xA0]/g, '') // Remove all possible whitespace and invisible characters
+      .replace(/[–—−‑⁃－]/g, '-') // Normalize all dash/hyphen variants
       .trim()
       .toUpperCase();
   };
@@ -413,7 +412,7 @@ export default function Outbound() {
       let offset = 0;
       const limit = 1000;
 
-      while (hasMore && allData.length < 20000) {
+      while (hasMore && allData.length < 40000) {
         const { data, error } = await supabase
           .from('current_pl_items')
           .select('*')
@@ -568,7 +567,7 @@ export default function Outbound() {
       let offset = 0;
       const limit = 1000;
 
-      while (hasMore && allData.length < 30000) {
+      while (hasMore && allData.length < 60000) {
         const { data, error } = await supabase
           .from('inventory_balances')
           .select('*')

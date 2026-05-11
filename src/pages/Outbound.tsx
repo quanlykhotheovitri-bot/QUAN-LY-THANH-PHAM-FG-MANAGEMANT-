@@ -1615,9 +1615,14 @@ export default function Outbound() {
           statusText = `Dư (${Math.abs(diff)})`;
         }
 
-        const invMatch = cleanedRpro 
-          ? plItemStats.rproInv.get(cleanedRpro) 
-          : (cleanedSo ? plItemStats.soInv.get(cleanedSo) : null);
+        const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
+        const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+        
+        const locations = new Set<string>();
+        if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
+        if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+        
+        const locationStr = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
 
         return {
           type: 'PL',
@@ -1629,7 +1634,7 @@ export default function Outbound() {
           quantity: item.totalBoxes,
           scan_count: scanCount,
           status: statusText,
-          location_path: invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A',
+          location_path: locationStr,
           note: 'Lưu từ Danh sách PL hiện tại',
           device_info: navigator.userAgent
         };
@@ -2050,13 +2055,19 @@ export default function Outbound() {
         plGroups.set(plNo, []);
       }
       
-      const invMatch = (item.so && item.rpro) 
-        ? plItemStats.compositeInv.get(`${item.so}|${item.rpro}`)
-        : item.rpro 
-          ? plItemStats.rproInv.get(item.rpro) 
-          : plItemStats.soInv.get(item.so);
-      const location = invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A';
-      const scanCount = item.rpro ? (plItemStats.rproCounts.get(item.rpro) || 0) : (plItemStats.soCounts.get(item.so) || 0);
+      const cleanedSo = cleanId(item.so);
+      const cleanedRpro = cleanId(item.rpro);
+      const cleanedPlNo = cleanId(item.plNo);
+      
+      const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
+      const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+      
+      const locations = new Set<string>();
+      if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
+      if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+      
+      const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
+      const scanCount = cleanedRpro ? (plItemStats.rproCounts.get(`${cleanedPlNo}|${cleanedRpro}`) || 0) : (plItemStats.soCounts.get(`${cleanedPlNo}|${cleanedSo}`) || 0);
       
       plGroups.get(plNo)?.push({
         ...item,
@@ -2884,10 +2895,14 @@ export default function Outbound() {
                             }
                           }
 
-                          const invMatch = cleanedRpro 
-                            ? plItemStats.rproInv.get(cleanedRpro) 
-                            : (cleanedSo ? plItemStats.soInv.get(cleanedSo) : null);
-                          const location = invMatch ? Array.from(invMatch.locations!).join(', ') : 'N/A';
+                          const invMatchRpro = cleanedRpro ? plItemStats.rproInv.get(cleanedRpro) : null;
+                          const invMatchSo = cleanedSo ? plItemStats.soInv.get(cleanedSo) : null;
+                          
+                          const locations = new Set<string>();
+                          if (invMatchRpro?.locations) invMatchRpro.locations.forEach(l => locations.add(l));
+                          if (invMatchSo?.locations) invMatchSo.locations.forEach(l => locations.add(l));
+                          
+                          const location = locations.size > 0 ? Array.from(locations).join(', ') : 'N/A';
 
                           return (
                             <tr key={index} className={`hover:bg-slate-50 transition-colors ${selectedPlItems.has(item.id) ? 'bg-blue-50/50' : ''}`}>

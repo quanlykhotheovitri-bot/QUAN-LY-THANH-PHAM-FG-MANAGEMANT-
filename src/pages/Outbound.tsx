@@ -335,7 +335,7 @@ export default function Outbound() {
       let allData: any[] = [];
       let hasMore = true;
       let offset = 0;
-      const limit = 2000;
+      const limit = 1000;
 
       while (hasMore && allData.length < 10000) {
         const { data, error } = await supabase
@@ -347,14 +347,17 @@ export default function Outbound() {
         if (error) throw error;
         if (data && data.length > 0) {
           allData = [...allData, ...data];
+          offset += data.length;
           if (data.length < limit) hasMore = false;
-          else offset += limit;
         } else {
           hasMore = false;
         }
       }
 
-      const items = allData.map(item => ({
+      // Filter duplicates by ID to avoid React key errors
+      const uniqueItems = Array.from(new Map(allData.map(item => [item.id, item])).values());
+
+      const items = uniqueItems.map(item => ({
         id: item.id,
         qrCode: item.qr_code?.trim() || '',
         so: item.so?.trim() || '',
@@ -385,7 +388,7 @@ export default function Outbound() {
       let offset = 0;
       const limit = 1000;
 
-      while (hasMore) {
+      while (hasMore && allData.length < 20000) {
         const { data, error } = await supabase
           .from('current_pl_items')
           .select('*')
@@ -396,14 +399,17 @@ export default function Outbound() {
         if (error) throw error;
         if (data && data.length > 0) {
           allData = [...allData, ...data];
+          offset += data.length;
           if (data.length < limit) hasMore = false;
-          else offset += limit;
         } else {
           hasMore = false;
         }
       }
 
-      setPlItems(allData.map(item => ({
+      // Filter duplicates by ID
+      const uniqueItems = Array.from(new Map(allData.map(item => [item.id, item])).values());
+
+      setPlItems(uniqueItems.map(item => ({
         id: item.id,
         plNo: item.pl_no?.trim() || '',
         so: item.so?.trim() || '',
@@ -528,7 +534,7 @@ export default function Outbound() {
       let offset = 0;
       const limit = 1000;
 
-      while (hasMore) {
+      while (hasMore && allData.length < 30000) {
         const { data, error } = await supabase
           .from('inventory_balances')
           .select('*')
@@ -539,14 +545,17 @@ export default function Outbound() {
         if (error) throw error;
         if (data && data.length > 0) {
           allData = [...allData, ...data];
+          offset += data.length;
           if (data.length < limit) hasMore = false;
-          else offset += limit;
         } else {
           hasMore = false;
         }
       }
 
-      const trimmedData = allData.map(inv => ({
+      // Filter duplicates by ID
+      const uniqueItems = Array.from(new Map(allData.map(item => [item.id, item])).values());
+
+      const trimmedData = uniqueItems.map(inv => ({
         ...inv,
         so: inv.so?.trim() || '',
         rpro: inv.rpro?.trim() || '',
@@ -667,7 +676,11 @@ export default function Outbound() {
           inventory_id: dbItem.inventory_id,
           inventory: dbItem.inventory_id ? { id: dbItem.inventory_id, location_path: dbItem.location_path } : null
         }));
-        setScannedItems(prev => [...newItemsForState, ...prev]);
+        setScannedItems(prev => {
+          const combined = [...newItemsForState, ...prev];
+          // Ensure uniqueness to avoid React key errors
+          return Array.from(new Map(combined.map(item => [item.id, item])).values());
+        });
         setHasUnsavedChanges(true);
       }
 
